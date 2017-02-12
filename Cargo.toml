@@ -1,0 +1,33 @@
+[package]
+name = "hibrido"
+version = "0.1.0"
+authors = ["Tiago Lam <tiagolam@gmail.com>"]
+
+#[lib]
+#name = "sdp"
+#path = "src/sdp.rs"
+
+[[bin]]
+name = "hibrido"
+path = "src/main.rs"
+
+[[bin]]
+name = "test"
+path = "src/test.rs"
+
+[[bin]]
+name = "test_receiver"
+path = "src/test_receiver.rs"
+
+[dependencies]
+log = "0.3.6"
+byteorder = "0.5.3"
+lazy_static = "0.2.1"
+nickel = "0.9.0"
+rir = { path = "../rir" }
+opus = "0.2.0"
+rustc-serialize = "0.3.22"
+
+[dependencies.log4rs]
+version = "0.4.8"
+features = ["yaml"]
