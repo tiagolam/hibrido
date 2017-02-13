@@ -105,7 +105,7 @@ fn post_member<'mw>(req: &mut Request, mut res: Response<'mw>) -> MiddlewareResu
     // Create member and insert in convo
     let sdp = SessionDescription::new();
     let parsed_sdp = sdp.from_sdp(&member_post.sdp);
-    let member = Arc::new(RwLock::new(Member::new(parsed_sdp.desc)));
+    let member = Member::new(parsed_sdp.desc);
 
     // Add member / SDP to the convo, negotiating the SDPs
     let sdp_answer = convo.add_member(member.clone());

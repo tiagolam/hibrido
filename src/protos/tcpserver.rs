@@ -88,7 +88,7 @@ impl tcp {
 */
 
         // Abstract the SDP around a member
-        let member = Arc::new(RwLock::new(Member::new(parse_result.desc))); 
+        let member = Member::new(parse_result.desc); 
 
         {
             let mut sdp_answer;

@@ -18,7 +18,7 @@ lazy_static! {
 
 pub struct Conference {
     pub id: String,
-    pub members: Mutex<Vec<Arc<RwLock<Member>>>>,
+    pub members: Mutex<HashMap<String, Arc<RwLock<Member>>>>,
 
     // SDP bound to the conference. The first member to arrive sets
     // sets the SDP which the other member will have to accept.
@@ -38,7 +38,7 @@ impl Conference {
 
         let convo = Conference {
             id: id.to_string(),
-            members: Mutex::new(vec![]),
+            members: Mutex::new(HashMap::new()),
             sdp: Mutex::new(None),
         };
 
@@ -69,7 +69,7 @@ impl Conference {
 
     pub fn add_member(&self, member: Arc<RwLock<Member>>) -> Option<SessionDescription> {
 
-        self.members.lock().unwrap().push(member.clone());
+        self.members.lock().unwrap().insert(member.read().unwrap().id.clone(), member.clone());
 
         let mut mutex = self.sdp.lock().unwrap();
         let mut sdp_answer_to_ret;
@@ -118,13 +118,21 @@ impl Conference {
         // be used in order to create the rtp sessions?
     }
 
+    pub fn get_member(&self, id: &str) -> Option<Arc<RwLock<Member>>>  {
+        if self.members.lock().unwrap().contains_key(id) {
+            return Some(self.members.lock().unwrap().get(id).unwrap().clone());
+        } else {
+            return None;
+        }
+    }
+
     pub fn process_engine(&self, member_local: Arc<RwLock<Member>>) {
 
         let mut rtp_pkt = member_local.read().unwrap().read_audio();
 
         debug!("Writing packet...");
 
-        for member in self.members.lock().unwrap().iter() /*i in 0..self.members.len()*/ {
+        for member in self.members.lock().unwrap().values() /*i in 0..self.members.len()*/ {
             if member.read().unwrap().sdp.media.clone().unwrap().port != member_local.read().unwrap().sdp.media.clone().unwrap().port {
                 member.read().unwrap().write_audio(&rtp_pkt);
             }

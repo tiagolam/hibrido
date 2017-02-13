@@ -1,20 +1,59 @@
+use lazy_static;
+use std::collections::HashMap;
 use std::str::FromStr;
+use std::sync::{Arc, Mutex, RwLock};
 use std::net::{UdpSocket, SocketAddr};
 
 use sdp::{SessionDescription};
 use rir::rtp::{RtpSession, RtpPkt, RtpHeader};
 
+// TODO(tlam): There's possible high contention here, as all member creations
+// pass through here
+lazy_static! {
+    static ref members_by_id: Mutex<HashMap<String, Arc<RwLock<Member>>>> = {
+        let mut m = HashMap::new();
+        Mutex::new(m)
+    };
+}
+
 pub struct Member {
+    pub id: String,
     pub sdp: SessionDescription,
     pub rtp_session: Option<RtpSession>,
 }
 
 impl Member {
 
-    pub fn new(sdp: SessionDescription) -> Member {
-        Member {
+    pub fn new(sdp: SessionDescription) -> Arc<RwLock<Member>> {
+        let member_id = "member_test";
+
+        unsafe {
+            if members_by_id.lock().unwrap().contains_key(member_id) {
+                return members_by_id.lock().unwrap().get(member_id).unwrap().clone();
+            }
+        }
+
+        debug!("Creating a new member [{}]", member_id);
+
+        let member = Member {
+            id: member_id.to_string(),
             sdp: sdp,
             rtp_session: None,
+        };
+
+        unsafe {
+            members_by_id.lock().unwrap().insert(member_id.to_string(), Arc::new(RwLock::new(member)));
+            return members_by_id.lock().unwrap().get(member_id).unwrap().clone();
+        }
+    }
+
+    pub fn get(id: &str) -> Option<Arc<RwLock<Member>>> {
+        unsafe {
+            if members_by_id.lock().unwrap().contains_key(id) {
+                return Some(members_by_id.lock().unwrap().get(id).unwrap().clone());
+            } else {
+                return None;
+            }
         }
     }
 
