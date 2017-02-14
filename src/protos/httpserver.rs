@@ -34,12 +34,22 @@ struct MemberPost {
 #[derive(RustcDecodable, RustcEncodable)]
 struct MemberResponse {
     member_id: String,
+    sdp: String,
 }
 
 impl ToJson for ConferenceResponse {
     fn to_json(&self) -> Json {
         let mut map = BTreeMap::new();
         map.insert("convo_id".to_string(), self.convo_id.to_json());
+        Json::Object(map)
+    }
+}
+
+impl ToJson for MemberResponse {
+    fn to_json(&self) -> Json {
+        let mut map = BTreeMap::new();
+        map.insert("member_id".to_string(), self.member_id.to_json());
+        map.insert("sdp".to_string(), self.sdp.to_json());
         Json::Object(map)
     }
 }
@@ -116,17 +126,27 @@ fn post_member<'mw>(req: &mut Request, mut res: Response<'mw>) -> MiddlewareResu
 
     debug!("SDP Answer {}", sdp_answer.clone().unwrap().to_string());
 
+    let memberid;
+    {
+        memberid = member.read().unwrap().id.clone();
+    }
+    // Compose response
+    let response = MemberResponse {
+        member_id: memberid,
+        sdp: sdp_answer.unwrap().to_string(),
+    };
+
     // TODO(tlam): One thread per connection? Ugh...
     thread::spawn(move || {
         loop {
             convo.process_engine(member.clone());
         }
     });
-
-    res.send(sdp_answer.clone().unwrap().to_string().as_bytes())
+ 
+    res.send(response.to_json())
 }
 
-fn get_member<'mw>(req: &mut Request, mut res: Response<'mw>) -> MiddlewareResult<'mw> {
+fn get_conference_member<'mw>(req: &mut Request, mut res: Response<'mw>) -> MiddlewareResult<'mw> {
 
     let convoid = req.param("convoid").unwrap();
 
@@ -137,8 +157,46 @@ fn get_member<'mw>(req: &mut Request, mut res: Response<'mw>) -> MiddlewareResul
         return res.render("Conference {} not found", &convoid)
     }
 
-    res.send("Conference found")
     // Find member
+    let memberid = req.param("memberid").unwrap();
+    let member = convo.unwrap().get_member(memberid);
+    if !member.is_some() {
+        res.set(StatusCode::NotFound);
+        return res.send(format!("Member {} not found in conference {}", &memberid, &convoid))
+    }
+
+    let member = member.unwrap();
+    let member_lock = member.read().unwrap();
+    // Compose response
+    let response = MemberResponse {
+        member_id: member_lock.id.to_string(),
+        sdp: member_lock.sdp.to_string(),
+    };
+ 
+    res.send(response.to_json())
+}
+
+
+fn get_member<'mw>(req: &mut Request, mut res: Response<'mw>) -> MiddlewareResult<'mw> {
+
+    let memberid = req.param("memberid").unwrap();
+
+    // Get the member of id :memberid
+    let member = Member::get(memberid);
+    if !member.is_some() {
+        res.set(StatusCode::NotFound);
+        return res.render("Member {} not found", &memberid)
+    }
+
+    let member = member.unwrap();
+    let member_lock = member.read().unwrap();
+    // Compose response
+    let response = MemberResponse {
+        member_id: member_lock.id.to_string(),
+        sdp: member_lock.sdp.to_string(),
+    };
+ 
+    res.send(response.to_json())
 }
 
 impl handlers for HttpServer {
@@ -150,7 +208,7 @@ impl handlers for HttpServer {
         server.post("/convo", post_conference);
         server.get("/convo/:convoid", get_conference);
         server.post("/convo/:convoid/member", post_member);
-        server.get("/convo/:convoid/member/:memberid", get_member);
+        server.get("/convo/:convoid/member/:memberid", get_conference_member);
         // Member related operations
         server.get("/member/:memberid", get_member);
 
