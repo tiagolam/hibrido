@@ -1,12 +1,13 @@
+extern crate nickel;
+
 use std::thread;
 use std::sync::Arc;
 use std::collections::BTreeMap;
 use std::sync::RwLock;
-
-use nickel;
 use rustc_serialize;
-use nickel::{Nickel, HttpRouter, Request, Response, MiddlewareResult, JsonBody};
-use nickel::status::StatusCode;
+
+use self::nickel::{Nickel, HttpRouter, Request, Response, MiddlewareResult, JsonBody};
+use self::nickel::status::StatusCode;
 use rustc_serialize::json::{Json, ToJson};
 use super::handlers;
 
@@ -17,24 +18,24 @@ use sdp::{SessionDescription};
 pub struct HttpServer;
 
 #[derive(RustcDecodable, RustcEncodable)]
-struct ConferencePost {
-    convo_id: String,
+pub struct ConferencePost {
+    pub convo_id: String,
 }
 
 #[derive(RustcDecodable, RustcEncodable)]
-struct ConferenceResponse {
-    convo_id: String,
+pub struct ConferenceResponse {
+    pub convo_id: String,
 }
 
 #[derive(RustcDecodable, RustcEncodable)]
-struct MemberPost {
-    sdp: String,
+pub struct MemberPost {
+    pub sdp: String,
 }
 
 #[derive(RustcDecodable, RustcEncodable)]
-struct MemberResponse {
-    member_id: String,
-    sdp: String,
+pub struct MemberResponse {
+    pub member_id: String,
+    pub sdp: String,
 }
 
 impl ToJson for ConferenceResponse {
@@ -175,7 +176,6 @@ fn get_conference_member<'mw>(req: &mut Request, mut res: Response<'mw>) -> Midd
  
     res.send(response.to_json())
 }
-
 
 fn get_member<'mw>(req: &mut Request, mut res: Response<'mw>) -> MiddlewareResult<'mw> {
 

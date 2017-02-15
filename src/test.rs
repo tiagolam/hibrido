@@ -6,9 +6,12 @@ extern crate rir;
 extern crate lazy_static;
 extern crate opus;
 extern crate byteorder;
+extern crate hyper;
+extern crate rustc_serialize;
 
 pub mod sdp;
 mod convo;
+mod protos;
 
 use std::str::from_utf8;
 use std::thread;
@@ -19,9 +22,14 @@ use byteorder::{ByteOrder, BigEndian, LittleEndian, ReadBytesExt, WriteBytesExt}
 use std::net::{TcpStream, UdpSocket, SocketAddr};
 use sdp::{SessionDescription, Origin};
 use std::net::{IpAddr, Ipv6Addr};
-use convo::member::new_rtp_session;
 use rir::rtp::{RtpSession, RtpPkt, RtpHeader};
 use opus::{Encoder, Application, Channels, Error};
+use hyper::{Client};
+use hyper::status::{StatusCode};
+use rustc_serialize::json;
+
+use convo::member::new_rtp_session;
+use protos::httpserver::{ConferencePost, MemberPost, ConferenceResponse, MemberResponse};
 
 fn convert_u8_to_i16(orig: &mut [u8], dest: &mut [i16]) {
 
@@ -55,8 +63,7 @@ fn main() {
 
     let local_port = conn.local_addr().unwrap().port();
 
-    let s3_sdp = format!("{} {} {}", "conference_id: conference_test_id
-        sdp: v=0
+    let s3_sdp = format!("{} {} {}", "v=0
         o=jdoe 2890844526 2890842807 IN IP4 127.0.0.1
         s=SDP Seminar
         i=A Seminar on the session description protocol
@@ -65,18 +72,53 @@ fn main() {
         a=recvonly
         m=audio", local_port, "RTP/AVP 0");
 
-    // Send SDP using TCP
-    let mut stream = TcpStream::connect("127.0.0.1:30000").unwrap();
-    let _ = stream.write(s3_sdp.as_bytes());
-    stream.flush();
+    // Create Conference
+    let post_body = ConferencePost {
+        convo_id: "test_convo_id".to_string(),
+    };
+
+    let post_body = json::encode(&post_body).unwrap();
+    let client = Client::new();
+    let mut res = client.post("http://127.0.0.1:3080/convo")
+                        .body(&post_body)
+                        .send()
+                        .unwrap();
+
+    // If 200, get the :convoid
+    if res.status != StatusCode::Ok {
+        error!("Bad response {}  when creating conversation", res.status);
+        return;
+    }
+    let ref mut res_body = String::new();
+    let _ = res.read_to_string(res_body);
+    let convo_res: ConferenceResponse = json::decode(&res_body).unwrap();
+
+    let post_body = MemberPost {
+        sdp: s3_sdp,
+    };
+    let post_body = json::encode(&post_body).unwrap();
+    debug!("Body is {}", post_body);
+    let post_url = format!("http://127.0.0.1:3080/convo/{}/member", convo_res.convo_id);
+    // Create member
+    let mut res = client.post(&post_url)
+                        .body(&post_body)
+                        .send()
+                        .unwrap();
+
+    // If 200, get the :memberid
+    if res.status != StatusCode::Ok {
+        error!("Bad response {}  when creating member", res.status);
+        return;
+    }
+    let ref mut res_body = String::new();
+    let _ = res.read_to_string(res_body);
+    let member_res: MemberResponse = json::decode(&res_body).unwrap();
 
     // read from the socket
     // Get answer
-    let mut buf = [0; 1500];
-    let _ = stream.read(&mut buf);
-    println!("\n---received:\n{}", from_utf8(&buf).unwrap());
+    println!("\n---received:\n{}", (&member_res.sdp));
     let sdp = SessionDescription::new();
-    let sdp_answer = sdp.from_sdp(from_utf8(&buf).unwrap());
+    let sdp_answer = sdp.from_sdp(&member_res.sdp);
 
     // 16000 samples / s =  640 bytes per 20ms
     let mut f = File::open("/home/tlam/Downloads/a2002011001-e02-16kHz.wav").unwrap(); 

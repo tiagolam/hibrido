@@ -27,6 +27,7 @@ nickel = "0.9.0"
 rir = { path = "../rir" }
 opus = "0.2.0"
 rustc-serialize = "0.3.22"
+hyper = "0.10.4"
 
 [dependencies.log4rs]
 version = "0.4.8"
