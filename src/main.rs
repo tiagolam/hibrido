@@ -9,7 +9,7 @@ extern crate opus;
 extern crate nickel;
 extern crate rustc_serialize;
 
-pub mod sdp;
+mod sdp;
 mod protos;
 mod convo;
 

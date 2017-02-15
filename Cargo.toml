@@ -3,21 +3,9 @@ name = "hibrido"
 version = "0.1.0"
 authors = ["Tiago Lam <tiagolam@gmail.com>"]
 
-#[lib]
-#name = "sdp"
-#path = "src/sdp.rs"
-
 [[bin]]
 name = "hibrido"
 path = "src/main.rs"
-
-[[bin]]
-name = "test"
-path = "src/test.rs"
-
-[[bin]]
-name = "test_receiver"
-path = "src/test_receiver.rs"
 
 [dependencies]
 log = "0.3.6"

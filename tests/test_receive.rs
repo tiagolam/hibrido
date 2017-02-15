@@ -2,16 +2,11 @@
 extern crate log;
 extern crate log4rs;
 extern crate rir;
-#[macro_use(lazy_static, __lazy_static_create)]
-extern crate lazy_static;
 extern crate opus;
 extern crate byteorder;
 extern crate hyper;
 extern crate rustc_serialize;
-
-pub mod sdp;
-mod convo;
-mod protos;
+extern crate hibrido;
 
 use std::str::from_utf8;
 use std::thread;
@@ -20,15 +15,15 @@ use std::io::prelude::*;
 use std::fs::File;
 use byteorder::{ByteOrder, BigEndian, ReadBytesExt, WriteBytesExt};
 use std::net::{TcpStream, UdpSocket, SocketAddr};
-use sdp::{SessionDescription, Origin};
+use hibrido::sdp::{SessionDescription, Origin};
+use hibrido::convo::member::{new_rtp_session};
 use std::net::{IpAddr, Ipv6Addr};
-use convo::member::new_rtp_session;
 use rir::rtp::{RtpSession, RtpPkt, RtpHeader};
 use opus::{Decoder, Channels};
 use hyper::{Client};
 use hyper::status::{StatusCode};
 use rustc_serialize::json;
-use protos::httpserver::{ConferencePost, MemberPost, ConferenceResponse, MemberResponse};
+use hibrido::protos::httpserver::{ConferencePost, MemberPost, ConferenceResponse, MemberResponse};
 
 fn convert_i16_to_u8(orig: &mut [i16], dest: &mut [u8]) {
     for i in 0..orig.len() {
@@ -41,7 +36,8 @@ fn convert_i16_to_u8(orig: &mut [i16], dest: &mut [u8]) {
     }
 }
 
-fn main() {
+#[test]
+fn test_receive() {
     log4rs::init_file("config/log4rs.yaml", Default::default()).unwrap();
 
     warn!("booting up");
