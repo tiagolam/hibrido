@@ -54,8 +54,8 @@ pub struct SessionDescription {
     pub timing: Option<Timing>,
     //time_zones:
     //encrypt_key:
-    pub attr: Option<Attr>,
-    pub media: Option<Media>,
+    pub attr: Vec<Attr>,
+    pub media: Vec<MediaDescription>,
 }
 
 //struct TimeDescription {
@@ -65,18 +65,19 @@ pub struct SessionDescription {
 
 #[derive(Clone, Debug)]
 pub struct MediaDescription {
-    name: Option<String>,
+    pub media: Media,
     //title:
     //conn:
     //bandwidth:
     //encrypt_key:
-    //attrs:
+    pub attrs: Vec<Attr>
 }
 
 impl MediaDescription {
-    pub fn new() -> MediaDescription {
+    pub fn new(media: Media) -> MediaDescription {
         MediaDescription {
-            name: None,
+            media: media,
+            attrs: vec![],
         }
     }
 }
@@ -231,14 +232,16 @@ impl SessionDescription {
             uri: None,
             conn: None,
             timing: None,
-            attr: None,
-            media: None,
+            attr: vec![],
+            media: vec![],
         }
     }
 
     pub fn from_sdp(&self, sdp: &str) -> ParseResult {
         let mut res = ParseResult::new();
         let sdm: Option<MediaDescription> = None;
+        let mut prev_media: Option<MediaDescription> = None;
+        let mut first_media = false;
 
         for mut line in sdp.lines() {
             line = line.trim();
@@ -254,8 +257,18 @@ impl SessionDescription {
                             SdpLine::Information(i) => { res.desc.info = Some(i); },
                             SdpLine::Connection(c) => { res.desc.conn = Some(c); },
                             SdpLine::Timing(t) => { res.desc.timing = Some(t); },
-                            SdpLine::Attr(a) => { res.desc.attr = Some(a); },
-                            SdpLine::Media(m) => { res.desc.media = Some(m); },
+                            SdpLine::Attr(a) => {
+                                if first_media {
+                                    let size = res.desc.media.len()-1;
+                                    res.desc.media[size].attrs.push(a);
+                                } else {
+                                    res.desc.attr.push(a);
+                                }
+                            },
+                            SdpLine::Media(m) => {
+                                res.desc.media.push(MediaDescription::new(m));
+                                first_media = true;
+                            },
                         }
                     }, Some(_) => {
                        println!("sdm has \"ref media\"");
@@ -268,7 +281,10 @@ impl SessionDescription {
                             SdpLine::Connection(_) => { res.ignored_lines.push(parsed.clone()); },
                             SdpLine::Timing(_) => { res.ignored_lines.push(parsed.clone()); },
                             SdpLine::Attr(_) => { res.ignored_lines.push(parsed.clone()); },
-                            SdpLine::Media(_) => { res.ignored_lines.push(parsed.clone()); },
+                            SdpLine::Media(_) => {
+                                prev_media = None;
+                                res.ignored_lines.push(parsed.clone());
+                            },
                         }
                     }
                 }
@@ -386,10 +402,10 @@ impl ToString for SessionDescription {
                  self.conn.clone().unwrap().ip_address,
                  self.timing.clone().unwrap().start_time,
                  self.timing.clone().unwrap().stop_time,
-                 self.media.clone().unwrap().media.to_string(),
-                 self.media.clone().unwrap().port,
-                 self.media.clone().unwrap().proto.to_string(),
-                 self.media.clone().unwrap().fmt[0])
+                 self.media[0].media.media.to_string(),
+                 self.media[0].media.port,
+                 self.media[0].media.proto.to_string(),
+                 self.media[0].media.fmt[0])
     } 
 }
 
@@ -408,18 +424,12 @@ fn parse_origin(text: &str) -> Option<Origin> {
         return None;
     }
 
-    println!("Parse Origin");
-
     let session_version = FromStr::from_str(parts[2]);
     let ip_addr = FromStr::from_str(parts[5]);
-
-    println!("Parse Origin 1");
 
     if session_version.is_err() || ip_addr.is_err() {
         return None
     }
-
-    println!("Parse Origin2");
 
     Some(Origin {
         username: parts[0].to_string(),
@@ -480,7 +490,6 @@ fn parse_connection(text: &str) -> Option<Connection> {
             }
         },
         Err(_) => return None,
-        //_ => println!("No valid IP address"),
     }
 
     let mut ttl:u8 = 0;
@@ -515,8 +524,6 @@ fn parse_timing(text: &str) -> Option<Timing> {
     // TODO(tlam) Verify this is NTP timestamps
     let start_time:u64 = parts[0].parse::<u64>().unwrap();
     let stop_time:u64 = parts[1].parse::<u64>().unwrap();
-
-    println!("timing");
 
     Some(Timing {
         start_time: start_time,
@@ -563,10 +570,4 @@ fn parse_media(text: &str) -> Option<Media> {
         fmt: fmt,
     })
 }
-
-// TODO Should it be better to just implement the 'Eq' trait?
-/*fn compare_sdps(sdp_a:SessionDescription, sdp_b:SessionDescription) -> Option<String> {
-
-    
-}*/
 

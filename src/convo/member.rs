@@ -68,7 +68,7 @@ impl Member {
     }
 
     pub fn write_audio(&self, rtp_pkt: &RtpPkt) {
-        debug!("Writing packet to port {}", self.sdp.media.clone().unwrap().port);
+        debug!("Writing packet to port {}", self.sdp.media[0].clone().media.port);
         self.rtp_session.as_ref().unwrap().write(rtp_pkt);
     }
 
@@ -98,7 +98,7 @@ impl Member {
 pub fn new_rtp_session(conn: UdpSocket, sdp: SessionDescription) -> RtpSession {
 
     let ip_addr = sdp.origin.unwrap().ip_address;
-    let port = sdp.media.unwrap().port;
+    let port = sdp.media[0].media.port;
 
     debug!("Connecting to endpoint {}:{}", ip_addr, port);
 

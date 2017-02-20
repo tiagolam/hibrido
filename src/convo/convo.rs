@@ -59,12 +59,13 @@ impl Conference {
     }
 
     fn change_ips(sdp: &mut SessionDescription, sock_addr: SocketAddr) {
-        let mut media = sdp.media.clone().unwrap();
         let mut origin = sdp.origin.clone().unwrap();
-        media.port = sock_addr.port();
         origin.ip_address = sock_addr.ip();
         sdp.origin = Some(origin);
-        sdp.media = Some(media);
+
+        for i in 0..sdp.media.len() {
+            sdp.media[i].media.port = sock_addr.port();
+        }
     }
 
     pub fn add_member(&self, member: Arc<RwLock<Member>>) -> Option<SessionDescription> {
@@ -133,7 +134,9 @@ impl Conference {
         debug!("Writing packet...");
 
         for member in self.members.lock().unwrap().values() /*i in 0..self.members.len()*/ {
-            if member.read().unwrap().sdp.media.clone().unwrap().port != member_local.read().unwrap().sdp.media.clone().unwrap().port {
+            let member_media = member.read().unwrap().sdp.media[0].clone().media.port;
+            let member_local_media = member_local.read().unwrap().sdp.media[0].clone().media.port;
+            if member_media != member_local_media {
                 member.read().unwrap().write_audio(&rtp_pkt);
             }
         }

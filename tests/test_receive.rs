@@ -50,10 +50,10 @@ fn test_receive() {
 
     let s3_sdp = format!("{} {} {}", "v=0
         o=jdoe 2890844526 2890842807 IN IP4 127.0.0.1
-        s=SDP Seminar
+        s=-
         i=A Seminar on the session description protocol
         c=IN IP4 224.2.17.12
-        t=2873397496 2873404696
+        t=0 0
         a=recvonly
         m=audio", local_port, "RTP/AVP 0");
 

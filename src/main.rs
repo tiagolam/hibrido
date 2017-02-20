@@ -40,10 +40,10 @@ fn main() {
     let s3_res = s1.from_sdp("
         v=0
         o=jdoe 2890844526 2890842807 IN IP4 10.47.16.5
-        s=SDP Seminar
+        s=-
         i=A Seminar on the session description protocol
         c=IN IP4 224.2.17.12/127
-        t=2873397496 2873404696
+        t=0 0
         a=recvonly
         m=audio 49170 RTP/AVP 0
     ");
