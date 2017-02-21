@@ -54,7 +54,7 @@ pub struct SessionDescription {
     pub timing: Option<Timing>,
     //time_zones:
     //encrypt_key:
-    pub attr: Vec<Attr>,
+    pub attrs: Vec<Attr>,
     pub media: Vec<MediaDescription>,
 }
 
@@ -232,7 +232,7 @@ impl SessionDescription {
             uri: None,
             conn: None,
             timing: None,
-            attr: vec![],
+            attrs: vec![],
             media: vec![],
         }
     }
@@ -262,7 +262,7 @@ impl SessionDescription {
                                     let size = res.desc.media.len()-1;
                                     res.desc.media[size].attrs.push(a);
                                 } else {
-                                    res.desc.attr.push(a);
+                                    res.desc.attrs.push(a);
                                 }
                             },
                             SdpLine::Media(m) => {
@@ -383,11 +383,11 @@ fn parse_line(line: &str) -> Option<SdpLine> {
 impl ToString for SessionDescription {
 
     fn to_string(&self) -> String {
-        format!("v={}\n
+        let mut session_description = format!("v={}\n
                  o={} {} {} {:?} {:?} {}\n
-                 n={}\ni={}\nc={:?} {:?} {}\n
-                 t={} {}\n
-                 m={} {} {} {}",
+                 s={}\n
+                 i={}\n
+                 c={:?} {:?} {}\n",
                  self.ver.unwrap(),
                  self.origin.clone().unwrap().username,
                  self.origin.clone().unwrap().session_id,
@@ -399,13 +399,31 @@ impl ToString for SessionDescription {
                  self.info.clone().unwrap(),
                  self.conn.clone().unwrap().net_type,
                  self.conn.clone().unwrap().addr_type,
-                 self.conn.clone().unwrap().ip_address,
+                 self.conn.clone().unwrap().ip_address);
+
+        for i in 0..self.attrs.len() {
+            let session_attrs = format!("a={}:{}\n",
+                     self.attrs[i].name,
+                     self.attrs[i].value);
+
+            session_description = session_description + &session_attrs;
+        }
+
+        session_description = session_description + &format!("t={} {}\n",
                  self.timing.clone().unwrap().start_time,
-                 self.timing.clone().unwrap().stop_time,
-                 self.media[0].media.media.to_string(),
-                 self.media[0].media.port,
-                 self.media[0].media.proto.to_string(),
-                 self.media[0].media.fmt[0])
+                 self.timing.clone().unwrap().stop_time);
+
+        for i in 0..self.media.len() {
+            let media_description = format!("m={} {} {} {}\n",
+                 self.media[i].media.media.to_string(),
+                 self.media[i].media.port,
+                 self.media[i].media.proto.to_string(),
+                 self.media[i].media.fmt[0]);
+
+            session_description = session_description + &media_description;
+        }
+
+        session_description
     } 
 }
 

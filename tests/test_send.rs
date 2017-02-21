@@ -64,8 +64,8 @@ fn test_send() {
         s=-
         i=A Seminar on the session description protocol
         c=IN IP4 224.2.17.12
-        t=0 0
         a=recvonly
+        t=0 0
         m=audio", local_port, "RTP/AVP 0");
 
     // Create Conference
@@ -112,7 +112,7 @@ fn test_send() {
 
     // read from the socket
     // Get answer
-    println!("\n---received:\n{}", (&member_res.sdp));
+    debug!("\n---received:\n{}", (&member_res.sdp));
     let sdp = SessionDescription::new();
     let sdp_answer = sdp.from_sdp(&member_res.sdp);
 
