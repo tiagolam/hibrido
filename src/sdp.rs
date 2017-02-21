@@ -12,6 +12,19 @@ pub struct Origin {
     pub ip_address: IpAddr,
 }
 
+impl ToString for Origin {
+
+    fn to_string(&self) -> String {
+        format!("o={} {} {} {} {} {}\n",
+                self.username,
+                self.session_id,
+                self.session_version,
+                self.net_type.to_string(),
+                self.addr_type.to_string(),
+                self.ip_address)
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct Connection {
     pub net_type: NetType,
@@ -19,6 +32,18 @@ pub struct Connection {
     pub ip_address: IpAddr,
     pub ttl: u8,
     pub nr_addrs: u8,
+}
+
+impl ToString for Connection {
+
+    fn to_string(&self) -> String {
+        format!("c={} {} {} {} {}\n",
+            self.net_type.to_string(),
+            self.addr_type.to_string(),
+            self.ip_address,
+            self.ttl,
+            self.nr_addrs)
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -31,6 +56,15 @@ pub struct Timing {
 pub struct Attr {
     pub name: String,
     pub value: String,
+}
+
+impl ToString for Attr {
+
+    fn to_string(&self) -> String {
+        format!("a={}:{}\n",
+            self.name,
+            self.value)
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -71,6 +105,28 @@ pub struct MediaDescription {
     //bandwidth:
     //encrypt_key:
     pub attrs: Vec<Attr>
+}
+
+
+impl ToString for MediaDescription {
+
+    fn to_string(&self) -> String {
+        let mut media_description = format!("m={} {} {} {}\n",
+            self.media.media.to_string(),
+            self.media.port,
+            self.media.proto.to_string(),
+            self.media.fmt[0]);
+
+        for k in 0..self.attrs.len() {
+            let media_attrs = format!("a={}:{}\n",
+                self.attrs[k].name,
+                self.attrs[k].value);
+
+            media_description = media_description + &media_attrs;
+        }
+
+        media_description
+    }
 }
 
 impl MediaDescription {
@@ -117,6 +173,16 @@ pub enum AddrType {
     IP6,
 }
 
+impl ToString for AddrType {
+
+    fn to_string(&self) -> String {
+        match *self {
+            AddrType::IP4 => return "IP4".to_string(),
+            AddrType::IP6 => return "IP6".to_string(),
+        }
+    }
+}
+
 impl FromStr for AddrType {
     type Err = ();
 
@@ -132,6 +198,15 @@ impl FromStr for AddrType {
 #[derive(Clone, Debug)]
 pub enum NetType {
     IN,
+}
+
+impl ToString for NetType {
+
+    fn to_string(&self) -> String {
+        match *self {
+            NetType::IN => "IN".to_string(),
+        }
+    }
 }
 
 impl FromStr for NetType {
@@ -197,11 +272,11 @@ impl ToString for MediaType {
 
     fn to_string(&self) -> String {
         match *self {
-            self::MediaType::AUDIO => "audio".to_string(),
-            self::MediaType::VIDEO => "video".to_string(),
-            self::MediaType::TEXT => "text".to_string(),
-            self::MediaType::APPLICATION => "application".to_string(),
-            self::MediaType::MESSAGE => "message".to_string(),
+            MediaType::AUDIO => "audio".to_string(),
+            MediaType::VIDEO => "video".to_string(),
+            MediaType::TEXT => "text".to_string(),
+            MediaType::APPLICATION => "application".to_string(),
+            MediaType::MESSAGE => "message".to_string(),
         }
     } 
 }
@@ -384,29 +459,18 @@ impl ToString for SessionDescription {
 
     fn to_string(&self) -> String {
         let mut session_description = format!("v={}\n
-                 o={} {} {} {:?} {:?} {}\n
+                 {}\n
                  s={}\n
                  i={}\n
-                 c={:?} {:?} {}\n",
+                 {}\n",
                  self.ver.unwrap(),
-                 self.origin.clone().unwrap().username,
-                 self.origin.clone().unwrap().session_id,
-                 self.origin.clone().unwrap().session_version,
-                 self.origin.clone().unwrap().net_type,
-                 self.origin.clone().unwrap().addr_type,
-                 self.origin.clone().unwrap().ip_address,
+                 self.origin.clone().unwrap().to_string(),
                  self.name.clone().unwrap(),
                  self.info.clone().unwrap(),
-                 self.conn.clone().unwrap().net_type,
-                 self.conn.clone().unwrap().addr_type,
-                 self.conn.clone().unwrap().ip_address);
+                 self.conn.clone().unwrap().to_string());
 
         for i in 0..self.attrs.len() {
-            let session_attrs = format!("a={}:{}\n",
-                     self.attrs[i].name,
-                     self.attrs[i].value);
-
-            session_description = session_description + &session_attrs;
+            session_description = session_description + &self.attrs[i].to_string();
         }
 
         session_description = session_description + &format!("t={} {}\n",
@@ -414,13 +478,7 @@ impl ToString for SessionDescription {
                  self.timing.clone().unwrap().stop_time);
 
         for i in 0..self.media.len() {
-            let media_description = format!("m={} {} {} {}\n",
-                 self.media[i].media.media.to_string(),
-                 self.media[i].media.port,
-                 self.media[i].media.proto.to_string(),
-                 self.media[i].media.fmt[0]);
-
-            session_description = session_description + &media_description;
+            session_description = session_description + &self.media[i].to_string();
         }
 
         session_description
