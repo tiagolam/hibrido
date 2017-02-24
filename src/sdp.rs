@@ -53,17 +53,70 @@ pub struct Timing {
 }
 
 #[derive(Clone, Debug)]
-pub struct Attr {
-    pub name: String,
-    pub value: String,
+pub struct Struct_PTime {
+    value: u32,
+}
+
+#[derive(Clone, Debug)]
+pub enum Attr {
+    SendRecv,
+    SendOnly,
+    RecvOnly,
+    Inactive,
+    PTime(Struct_PTime),
 }
 
 impl ToString for Attr {
 
     fn to_string(&self) -> String {
-        format!("a={}:{}\n",
-            self.name,
-            self.value)
+
+        let mut name;
+        let mut value: Option<String> = None;
+        match *self {
+            Attr::RecvOnly => {
+                name = "recvonly".to_string();
+            },
+            Attr::SendOnly => {
+                name = "sendonly".to_string();
+            },
+            Attr::SendRecv => {
+                name = "sendrecv".to_string();
+            },
+            Attr::Inactive => {
+                name = "inactive".to_string();
+            },
+            Attr::PTime(Struct_PTime{value: x}) => {
+                name = "ptime".to_string();
+                value = Some(x.to_string());
+            },
+        }
+
+        match value {
+            Some(x) => format!("a={}:{}\n", name, x),
+            None => format!("a={}\n", name)
+        }
+    }
+}
+
+trait AttrFromStr {
+    fn from_str(attr_type: &str, attr_value: Option<&str>) -> Result<Attr, ()>;
+}
+
+impl AttrFromStr for Attr {
+
+    fn from_str(attr_type: &str, attr_value: Option<&str>) -> Result<Attr, ()> {
+        match attr_type {
+            "recvonly"  => Ok(Attr::RecvOnly),
+            "sendonly"  => Ok(Attr::SendOnly),
+            "sendrecv"  => Ok(Attr::SendRecv),
+            "inactive"  => Ok(Attr::Inactive),
+            "ptime"     => {
+                Ok(Attr::PTime(Struct_PTime{
+                    value: attr_value.unwrap().parse::<u32>().unwrap()
+                }))
+            },
+            _           => Err(()),
+        }
     }
 }
 
@@ -118,9 +171,8 @@ impl ToString for MediaDescription {
             self.media.fmt[0]);
 
         for k in 0..self.attrs.len() {
-            let media_attrs = format!("a={}:{}\n",
-                self.attrs[k].name,
-                self.attrs[k].value);
+            let media_attrs = format!("a={}\n",
+                self.attrs[k].to_string());
 
             media_description = media_description + &media_attrs;
         }
@@ -231,9 +283,9 @@ impl ToString for MediaProto {
 
     fn to_string(&self) -> String {
         match *self {
-        self::MediaProto::Udp => "UDP".to_string(),
-        self::MediaProto::RtpAvp => "RTP/AVP".to_string(),
-        self::MediaProto::RtpSavp => "RTP/SAVP".to_string(),
+            MediaProto::Udp => "UDP".to_string(),
+            MediaProto::RtpAvp => "RTP/AVP".to_string(),
+            MediaProto::RtpSavp => "RTP/SAVP".to_string(),
         }
     } 
 }
@@ -485,13 +537,28 @@ impl ToString for SessionDescription {
     } 
 }
 
+fn negotiate_media(mut media: MediaDescription) {
+
+    for i in 0..media.attrs.len() {
+        match media.attrs[i] {
+            Attr::SendOnly => media.attrs[i] = Attr::RecvOnly,
+            Attr::RecvOnly => media.attrs[i] = Attr::SendOnly,
+            Attr::SendRecv => media.attrs[i] = Attr::SendRecv,
+            Attr::Inactive => media.attrs[i] = Attr::Inactive,
+            _ => {},
+        }
+    }
+}
+
 pub fn negotiate_with(sdp_orig: Option<&SessionDescription>, sdp_offer: &SessionDescription) -> SessionDescription {
 
     //TODO Refine negotiation based on RFC#3264
     //     We are only returning the offer as is now
 
     // Construct a new SDP based on the negotiation
-    sdp_offer.clone()
+    let sdp_answer = sdp_offer.clone();
+
+    sdp_answer
 }
 
 fn parse_origin(text: &str) -> Option<Origin> {
@@ -614,17 +681,22 @@ fn parse_attr(text: &str) -> Option<Attr> {
     }
 
     let attrs = parts[0].split(':').collect::<Vec<&str>>();
-    if attrs.len() == 1 {
-        Some(Attr {
-            name: attrs[0].to_string(),
-            value: "".to_string(),
-        })
-    } else {
-        Some(Attr {
-            name: attrs[0].to_string(),
-            value: attrs[1].to_string(),
-        })
+
+    let result;
+    match attrs.len() {
+        1 => {
+            result = Attr::from_str(attrs[0], None)
+        },
+        2 => {
+            result = Attr::from_str(attrs[0], Some(attrs[1]))
+        },
+        _ => {
+            debug!("Invalid attribute");
+            result = Err(())
+        },
     }
+
+    result.ok()
 }
 
 fn parse_media(text: &str) -> Option<Media> {

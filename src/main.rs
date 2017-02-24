@@ -42,7 +42,7 @@ fn main() {
         o=jdoe 2890844526 2890842807 IN IP4 10.47.16.5
         s=-
         i=A Seminar on the session description protocol
-        c=IN IP4 224.2.17.12/127
+        c=IN IP4 224.2.17.12
         a=recvonly
         t=0 0
         m=audio 49170 RTP/AVP 0
