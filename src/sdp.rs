@@ -372,11 +372,11 @@ impl SessionDescription {
 
         for mut line in sdp.lines() {
             line = line.trim();
-            println!("line: {}", line);
+            debug!("line: {}", line);
             if let Some(parsed) = parse_line(line) {
                 match sdm {
                     None => {
-                        println!("sdm is None");
+                        debug!("sdm is None");
                         match parsed {
                             SdpLine::ProtocolVersion(v) => { res.desc.ver = Some(v); },
                             SdpLine::Origin(o) => { res.desc.origin = Some(o); },
@@ -398,7 +398,7 @@ impl SessionDescription {
                             },
                         }
                     }, Some(_) => {
-                       println!("sdm has \"ref media\"");
+                       debug!("sdm has \"ref media\"");
                        match parsed {
                             SdpLine::ProtocolVersion(_) => { res.ignored_lines.push(parsed.clone()); },
                             SdpLine::Origin(_) => { res.ignored_lines.push(parsed.clone()); },
@@ -416,7 +416,7 @@ impl SessionDescription {
                     }
                 }
             } else {
-                println!("invalid: {}", line);
+                debug!("invalid: {}", line);
                 res.unparsed_lines.push(line.to_string());
             }
         }
@@ -437,10 +437,10 @@ fn parse_line(line: &str) -> Option<SdpLine> {
     match line_type {
         "v" => {
             if let Ok(v) = FromStr::from_str(line_val) {
-                println!("v => {}", v);
+                debug!("v => {}", v);
                 Some(SdpLine::ProtocolVersion(v))
             } else {
-                println!("v is None");
+                debug!("v is None");
                 None
             }
         },
@@ -448,7 +448,7 @@ fn parse_line(line: &str) -> Option<SdpLine> {
             if let Some(o) = parse_origin(line_val) {
                 Some(SdpLine::Origin(o))
             } else {
-                println!("o is None");
+                debug!("o is None");
                 None
             }
         },
@@ -456,7 +456,7 @@ fn parse_line(line: &str) -> Option<SdpLine> {
             if let Some(s) = parse_session_name(line_val) {
                 Some(SdpLine::Description(s))
             } else {
-                println!("Session name not valid");
+                debug!("Session name not valid");
                 None
             }
         },
@@ -464,7 +464,7 @@ fn parse_line(line: &str) -> Option<SdpLine> {
             if let Some(i) = parse_information(line_val) {
                 Some(SdpLine::Information(i))
             } else {
-                println!("Information not valid");
+                debug!("Information not valid");
                 None
             }
         },
@@ -474,7 +474,7 @@ fn parse_line(line: &str) -> Option<SdpLine> {
             if let Some(c) = parse_connection(line_val) {
                 Some(SdpLine::Connection(c))
             } else {
-                println!("Connection not valid");
+                debug!("Connection not valid");
                 None
             }
         },
@@ -482,7 +482,7 @@ fn parse_line(line: &str) -> Option<SdpLine> {
             if let Some(t) = parse_timing(line_val) {
                 Some(SdpLine::Timing(t))
             } else {
-                println!("Timing not valid");
+                debug!("Timing not valid");
                 None
             }
         },
@@ -490,7 +490,7 @@ fn parse_line(line: &str) -> Option<SdpLine> {
             if let Some(a) = parse_attr(line_val) {
                 Some(SdpLine::Attr(a))
             } else {
-                println!("Attribute not valid");
+                debug!("Attribute not valid");
                 None
             }        
         },
@@ -498,7 +498,7 @@ fn parse_line(line: &str) -> Option<SdpLine> {
             if let Some(m) = parse_media(line_val) {
                 Some(SdpLine::Media(m))
             } else {
-                println!("Media not valid");
+                debug!("Media not valid");
                 None
             }        
         },
@@ -601,7 +601,7 @@ fn parse_information(text: &str) -> Option<String> {
 
     let information = text.to_string();
 
-    println!("information: {}", information);
+    debug!("information: {}", information);
 
     Some(information)
 }
@@ -625,11 +625,11 @@ fn parse_connection(text: &str) -> Option<Connection> {
         Ok(value) => match value {
             IpAddr::V4(x) => {
                 is_mulcast_or_ipv6 = x.is_multicast();
-                println!("Ipv4 address")
+                debug!("Ipv4 address")
             }
             IpAddr::V6(_) => {
                 is_mulcast_or_ipv6 = true;
-                println!("Ipv6 address")
+                debug!("Ipv6 address")
             }
         },
         Err(_) => return None,
@@ -638,8 +638,7 @@ fn parse_connection(text: &str) -> Option<Connection> {
     let mut ttl:u8 = 0;
     let mut nr_addrs:u8 = 0;
     if is_mulcast_or_ipv6 && conn_addr.len() > 1 {
-        // TODO(tlam) Log it instead of println!
-        println!("Maformed connection address");
+        debug!("Malformed connection address");
         return None;
     } else if conn_addr.len() == 3 {
         ttl = conn_addr[1].parse::<u8>().unwrap();
