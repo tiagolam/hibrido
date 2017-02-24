@@ -53,7 +53,7 @@ pub struct Timing {
 }
 
 #[derive(Clone, Debug)]
-pub struct Struct_PTime {
+pub struct PTimeValue {
     value: u32,
 }
 
@@ -63,7 +63,7 @@ pub enum Attr {
     SendOnly,
     RecvOnly,
     Inactive,
-    PTime(Struct_PTime),
+    PTime(PTimeValue),
 }
 
 impl ToString for Attr {
@@ -85,7 +85,7 @@ impl ToString for Attr {
             Attr::Inactive => {
                 name = "inactive".to_string();
             },
-            Attr::PTime(Struct_PTime{value: x}) => {
+            Attr::PTime(PTimeValue{value: x}) => {
                 name = "ptime".to_string();
                 value = Some(x.to_string());
             },
@@ -111,7 +111,7 @@ impl AttrFromStr for Attr {
             "sendrecv"  => Ok(Attr::SendRecv),
             "inactive"  => Ok(Attr::Inactive),
             "ptime"     => {
-                Ok(Attr::PTime(Struct_PTime{
+                Ok(Attr::PTime(PTimeValue{
                     value: attr_value.unwrap().parse::<u32>().unwrap()
                 }))
             },
@@ -539,12 +539,22 @@ impl ToString for SessionDescription {
 
 fn negotiate_media(mut media: MediaDescription) {
 
+    // For each of the attributes present on the offer, negotiate, and put the
+    // result on the answer
     for i in 0..media.attrs.len() {
         match media.attrs[i] {
-            Attr::SendOnly => media.attrs[i] = Attr::RecvOnly,
-            Attr::RecvOnly => media.attrs[i] = Attr::SendOnly,
-            Attr::SendRecv => media.attrs[i] = Attr::SendRecv,
-            Attr::Inactive => media.attrs[i] = Attr::Inactive,
+            Attr::SendOnly => {
+                media.attrs[i] = Attr::RecvOnly
+            },
+            Attr::RecvOnly => {
+                media.attrs[i] = Attr::SendOnly
+            },
+            Attr::SendRecv => {
+                media.attrs[i] = Attr::SendRecv
+            },
+            Attr::Inactive => {
+                media.attrs[i] = Attr::Inactive
+            },
             _ => {},
         }
     }
