@@ -171,7 +171,7 @@ impl ToString for MediaDescription {
             self.media.fmt[0]);
 
         for k in 0..self.attrs.len() {
-            let media_attrs = format!("a={}\n",
+            let media_attrs = format!("{}",
                 self.attrs[k].to_string());
 
             media_description = media_description + &media_attrs;
