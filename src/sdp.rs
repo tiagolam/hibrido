@@ -684,20 +684,15 @@ fn parse_timing(text: &str) -> Option<Timing> {
 }
 
 fn parse_attr(text: &str) -> Option<Attr> {
-    let parts = text.split(' ').collect::<Vec<&str>>();
-    if parts.len() != 1 {
-        return None;
-    }
-
-    let attrs = parts[0].split(':').collect::<Vec<&str>>();
+    let parts = text.split(':').collect::<Vec<&str>>();
 
     let result;
-    match attrs.len() {
+    match parts.len() {
         1 => {
-            result = Attr::from_str(attrs[0], None)
+            result = Attr::from_str(parts[0], None)
         },
         2 => {
-            result = Attr::from_str(attrs[0], Some(attrs[1]))
+            result = Attr::from_str(parts[0], Some(parts[1]))
         },
         _ => {
             debug!("Invalid attribute");
