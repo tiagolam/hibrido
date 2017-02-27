@@ -64,9 +64,11 @@ fn test_send() {
         s=-
         i=A Seminar on the session description protocol
         c=IN IP4 224.2.17.12
-        a=recvonly
         t=0 0
-        m=audio", local_port, "RTP/AVP 0");
+        m=audio", local_port, "RTP/AVP 8
+        a=rtpmap:8 PCMA/8000
+        a=ptime:20
+        a=sendrecv");
 
     // Create Conference
     let post_body = ConferencePost {

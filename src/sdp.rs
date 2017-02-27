@@ -58,12 +58,103 @@ pub struct PTimeValue {
 }
 
 #[derive(Clone, Debug)]
+pub struct RtpMapValue {
+    payload_type: u32,
+    encoding_name: String,
+    clock_rate: u32,
+    encoding_params: Option<u32>,
+}
+
+impl FromStr for RtpMapValue {
+    type Err = ();
+
+    fn from_str(rtpmap_value: &str) -> Result<Self, Self::Err> {
+        let values = rtpmap_value.split(' ').collect::<Vec<&str>>();
+        if values.len() != 2 {
+            debug!("Invalid value for rtpmap");
+            return Err(())
+        }
+
+        let payload_type = values[0].parse::<u32>().unwrap();
+        let params = values[1].split('/').collect::<Vec<&str>>();
+
+        if params.len() < 2 {
+            debug!("Invalid encoding/rate for rtpmap");
+            return Err(())
+        }
+
+        let encoding_name = FromStr::from_str(params[0]).unwrap();
+        let clock_rate = params[1].parse::<u32>().unwrap();
+
+        let mut encoding_params = None;
+        if params.len() == 3 {
+            encoding_params = params[2].parse::<u32>().ok();
+        }
+
+        Ok(RtpMapValue {
+            payload_type: payload_type,
+            encoding_name: encoding_name,
+            clock_rate: clock_rate,
+            encoding_params: encoding_params,
+        })
+    }
+}
+
+impl ToString for RtpMapValue {
+
+    fn to_string(&self) -> String {
+
+        let value = format!("{} {}/{}", self.payload_type, self.encoding_name, self.clock_rate);
+
+        match self.encoding_params {
+            Some(params) => { format!("{}/{}", value, params) },
+            None => { value  },
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct FmtPValue {
+    format: u32,
+    format_params: String,
+}
+
+impl FromStr for FmtPValue {
+    type Err = ();
+
+    fn from_str(fmtp_value: &str) -> Result<Self, Self::Err> {
+        let values = fmtp_value.split(' ').collect::<Vec<&str>>();
+        if values.len() != 2 {
+            debug!("Invalid value for fmtp");
+            return Err(())
+        }
+
+        let format = values[0].parse::<u32>().unwrap();
+        let fmt_params = values[1].to_string();
+
+        Ok(FmtPValue {
+            format: format,
+            format_params: fmt_params,
+        })
+    }
+}
+
+impl ToString for FmtPValue {
+
+    fn to_string(&self) -> String {
+        format!("{} {}", self.format, self.format_params)
+    }
+}
+
+#[derive(Clone, Debug)]
 pub enum Attr {
     SendRecv,
     SendOnly,
     RecvOnly,
     Inactive,
     PTime(PTimeValue),
+    RtpMap(RtpMapValue),
+    FmtP(FmtPValue),
 }
 
 impl ToString for Attr {
@@ -87,6 +178,14 @@ impl ToString for Attr {
             },
             Attr::PTime(PTimeValue{value: x}) => {
                 name = "ptime".to_string();
+                value = Some(x.to_string());
+            },
+            Attr::RtpMap(ref x) => {
+                name = "rtpmap".to_string();
+                value = Some(x.to_string());
+            },
+            Attr::FmtP(ref x) => {
+                name = "fmtp".to_string();
                 value = Some(x.to_string());
             },
         }
@@ -114,6 +213,16 @@ impl AttrFromStr for Attr {
                 Ok(Attr::PTime(PTimeValue{
                     value: attr_value.unwrap().parse::<u32>().unwrap()
                 }))
+            },
+            "rtpmap"    => {
+                Ok(Attr::RtpMap(
+                    attr_value.unwrap().parse::<RtpMapValue>().unwrap()
+                ))
+            },
+            "fmtp"      => {
+                Ok(Attr::FmtP(
+                    attr_value.unwrap().parse::<FmtPValue>().unwrap()
+                ))
             },
             _           => Err(()),
         }
