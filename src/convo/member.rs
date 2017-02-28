@@ -1,4 +1,7 @@
+extern crate uuid;
+
 use lazy_static;
+use self::uuid::Uuid;
 use std::collections::HashMap;
 use std::str::FromStr;
 use std::sync::{Arc, Mutex, RwLock};
@@ -25,13 +28,7 @@ pub struct Member {
 impl Member {
 
     pub fn new(sdp: SessionDescription) -> Arc<RwLock<Member>> {
-        let member_id = "member_test";
-
-        unsafe {
-            if members_by_id.lock().unwrap().contains_key(member_id) {
-                return members_by_id.lock().unwrap().get(member_id).unwrap().clone();
-            }
-        }
+        let member_id: &str = &Uuid::new_v4().to_string();
 
         debug!("Creating a new member [{}]", member_id);
 

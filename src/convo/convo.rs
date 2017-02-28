@@ -80,7 +80,6 @@ impl Conference {
             Some(ref convo) => { 
                 debug!("Negotiating SDPs");
                 let mut sdp_answer = sdp::negotiate_with(Some(convo), &member.read().unwrap().sdp);
-
                 member.write().unwrap().init_audio();
 
                 Conference::change_ips(&mut sdp_answer, member.write().unwrap().rtp_session.as_ref().unwrap().conn.local_addr().unwrap());

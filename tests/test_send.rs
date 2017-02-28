@@ -114,7 +114,7 @@ fn test_send() {
 
     // read from the socket
     // Get answer
-    debug!("\n---received:\n{}", (&member_res.sdp));
+    debug!("\n---received:\n{}", &member_res.sdp);
     let sdp = SessionDescription::new();
     let sdp_answer = sdp.from_sdp(&member_res.sdp);
 

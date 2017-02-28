@@ -8,6 +8,7 @@ extern crate opus;
 #[macro_use]
 extern crate nickel;
 extern crate rustc_serialize;
+extern crate uuid;
 
 mod sdp;
 mod protos;
