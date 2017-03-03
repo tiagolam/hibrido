@@ -675,38 +675,117 @@ impl ToString for SessionDescription {
     } 
 }
 
-fn negotiate_media(mut media: MediaDescription) {
+fn negotiate_media_stream(orig_media: MediaDescription, offer_media: &mut MediaDescription) -> bool {
 
+    if orig_media.media.media != offer_media.media.media {
+        debug!("Different media types [orig: {}, offer: {}", orig_media.media.media.to_string(), offer_media.media.media.to_string());
+        return false
+    }
+
+    if offer_media.media.proto != MediaProto::RtpAvp {
+        debug!("Media proto {} not supported", offer_media.media.proto.to_string());
+        return false
+    }
+
+    let mut found_match = true;
+    let offer_fmt =  offer_media.media.fmt.clone();
+    let result = offer_fmt.into_iter().filter(|x| orig_media.media.fmt.contains(x)).collect::<Vec<_>>();
+    //offer_media.media.fmt.retain(|x| !orig_media.media.fmt.contains(x));
+
+    if result.len() == 0 {
+        debug!("Media {} and {} are not a match", orig_media.to_string(), offer_media.to_string());
+        return false
+    }
+
+    debug!("Media {} and {} are a match: {}", orig_media.to_string(), offer_media.to_string(), result.len());
+
+    offer_media.media.fmt = result;
+
+    let mut offer_attrs = offer_media.attrs.clone();
+    let mut filtered_attrs = vec![];
+    let offer_fmts = offer_media.media.fmt.clone();
+    for fmt in offer_fmts {
+        let value = fmt.parse::<u32>().unwrap();
+
+        for offer_attr in offer_attrs.drain(0..) {
+            match offer_attr {
+                Attr::RtpMap(RtpMapValue{payload_type: x, ..}) => {
+                    if value != x {
+                        debug!("Different media fmt [orig: {}, offer: {}]", value, x);
+                        continue;
+                    }
+
+                    filtered_attrs.push(offer_attr);
+                },
+                _ => {},
+            }
+        }
+    }
+
+    let offer_attrs = filtered_attrs.clone();
+    let result = offer_attrs.into_iter().filter(|x| orig_media.attrs.contains(x)).collect::<Vec<_>>();
+
+    if result.len() == 0 {
+        debug!("attrs {:?} and {:?} are not a match", filtered_attrs, orig_media.attrs);
+        return false
+    }
+
+    debug!("Media is a match: {}", result[0].to_string());
+
+    let mut offer_media_attrs = offer_media.attrs.clone();
+    offer_media.attrs = result;
     // For each of the attributes present on the offer, negotiate, and put the
     // result on the answer
-    for i in 0..media.attrs.len() {
-        match media.attrs[i] {
+    for offer_attr in &mut offer_media_attrs {
+        match *offer_attr {
             Attr::SendOnly => {
-                media.attrs[i] = Attr::RecvOnly
+                offer_media.attrs.push(Attr::RecvOnly)
             },
             Attr::RecvOnly => {
-                media.attrs[i] = Attr::SendOnly
+                offer_media.attrs.push(Attr::SendOnly)
             },
             Attr::SendRecv => {
-                media.attrs[i] = Attr::SendRecv
+                offer_media.attrs.push(Attr::SendRecv)
             },
             Attr::Inactive => {
-                media.attrs[i] = Attr::Inactive
+                offer_media.attrs.push(Attr::Inactive)
+            },
+            Attr::PTime(ref x) => {
+                offer_media.attrs.push(Attr::PTime(x.clone()))
             },
             _ => {},
         }
     }
+
+    return found_match
 }
 
 pub fn negotiate_with(sdp_orig: Option<&SessionDescription>, sdp_offer: &SessionDescription) -> SessionDescription {
 
-    //TODO Refine negotiation based on RFC#3264
-    //     We are only returning the offer as is now
+    //TODO Negotiation based on RFC#3264
 
     // Construct a new SDP based on the negotiation
-    let sdp_answer = sdp_offer.clone();
+    if sdp_orig.is_some() {
+        let mut sdp_answer = sdp_offer.clone();
 
-    sdp_answer
+        for answer_media in &mut sdp_answer.media {
+            let mut found_match = false;
+            for orig_media in sdp_orig.unwrap().media.iter() {
+                found_match = negotiate_media_stream(orig_media.clone(), answer_media);
+                if found_match {
+                    break
+                }
+            }
+
+            if !found_match {
+                answer_media.media.port = 0;
+            }
+        }
+
+        return sdp_answer
+    }
+
+    sdp_offer.clone()
 }
 
 fn parse_origin(text: &str) -> Option<Origin> {

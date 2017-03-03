@@ -65,7 +65,8 @@ fn test_send() {
         i=A Seminar on the session description protocol
         c=IN IP4 224.2.17.12
         t=0 0
-        m=audio", local_port, "RTP/AVP 8
+        m=audio", local_port, "RTP/AVP 101 8
+        a=rtpmap:101 opus/48000
         a=rtpmap:8 PCMA/8000
         a=ptime:20
         a=sendrecv");
