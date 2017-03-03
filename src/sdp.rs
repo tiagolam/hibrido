@@ -823,11 +823,13 @@ fn parse_media(text: &str) -> Option<Media> {
         return None;
     }
 
-    let fmt:Vec<String> = parts[0..parts.len()-3].iter().map(|s| s.to_string()).collect();
+    let fmt:Vec<String> = parts[3..].iter().map(|s| s.to_string()).collect();
 
     if fmt.len() == 0 {
         return None;
     }
+
+    debug!("Fmt items {:?}", fmt);
 
     Some(Media {
         media: parts[0].parse::<MediaType>().unwrap(),
