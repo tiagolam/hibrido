@@ -701,21 +701,21 @@ fn negotiate_media_stream(orig_media: MediaDescription, offer_media: &mut MediaD
 
     offer_media.media.fmt = result;
 
-    let mut offer_attrs = offer_media.attrs.clone();
     let mut filtered_attrs = vec![];
     let offer_fmts = offer_media.media.fmt.clone();
     for fmt in offer_fmts {
         let value = fmt.parse::<u32>().unwrap();
 
-        for offer_attr in offer_attrs.drain(0..) {
-            match offer_attr {
+        let mut orig_attrs = orig_media.attrs.clone();
+        for orig_attr in orig_attrs.drain(0..) {
+            match orig_attr {
                 Attr::RtpMap(RtpMapValue{payload_type: x, ..}) => {
                     if value != x {
                         debug!("Different media fmt [orig: {}, offer: {}]", value, x);
                         continue;
                     }
 
-                    filtered_attrs.push(offer_attr);
+                    filtered_attrs.push(orig_attr);
                 },
                 _ => {},
             }
