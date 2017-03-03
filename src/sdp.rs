@@ -57,6 +57,13 @@ pub struct PTimeValue {
     value: u32,
 }
 
+impl PartialEq for PTimeValue {
+
+    fn eq(&self, other: &PTimeValue) -> bool {
+        self.value == other.value
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct RtpMapValue {
     payload_type: u32,
@@ -113,6 +120,15 @@ impl ToString for RtpMapValue {
     }
 }
 
+impl PartialEq for RtpMapValue {
+
+    fn eq(&self, other: &RtpMapValue) -> bool {
+        self.payload_type == other.payload_type &&
+            self.encoding_name == other.encoding_name &&
+            self.clock_rate == other.clock_rate
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct FmtPValue {
     format: u32,
@@ -146,7 +162,15 @@ impl ToString for FmtPValue {
     }
 }
 
-#[derive(Clone, Debug)]
+impl PartialEq for FmtPValue {
+
+    fn eq(&self, other: &FmtPValue) -> bool {
+        self.format == other.format &&
+            self.format_params == self.format_params
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub enum Attr {
     SendRecv,
     SendOnly,
@@ -386,7 +410,7 @@ impl FromStr for NetType {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum MediaProto {
     Udp,
     RtpAvp,
@@ -425,7 +449,7 @@ pub struct Media {
     pub fmt: Vec<String>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum MediaType {
     AUDIO,
     VIDEO,
