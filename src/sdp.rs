@@ -273,15 +273,20 @@ pub struct MediaDescription {
 impl ToString for MediaDescription {
 
     fn to_string(&self) -> String {
-        let mut media_description = format!("m={} {} {} {}\n",
+        let mut media_description = format!("m={} {} {}",
             self.media.media.to_string(),
             self.media.port,
-            self.media.proto.to_string(),
-            self.media.fmt[0]);
+            self.media.proto.to_string());
 
-        for k in 0..self.attrs.len() {
+        for i in 0..self.media.fmt.len() {
+            media_description = format!("{} {}", media_description, self.media.fmt[i]);
+        }
+
+        media_description = format!("{}\n", media_description);
+
+        for i in 0..self.attrs.len() {
             let media_attrs = format!("{}",
-                self.attrs[k].to_string());
+                self.attrs[i].to_string());
 
             media_description = media_description + &media_attrs;
         }
