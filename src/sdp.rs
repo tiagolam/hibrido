@@ -2,6 +2,8 @@ use std::str::FromStr;
 use std::string::ToString;
 use std::net::IpAddr;
 
+use ice;
+
 #[derive(Clone, Debug)]
 pub struct Origin {
     pub username: String,
@@ -58,7 +60,6 @@ pub struct PTimeValue {
 }
 
 impl PartialEq for PTimeValue {
-
     fn eq(&self, other: &PTimeValue) -> bool {
         self.value == other.value
     }
@@ -170,6 +171,111 @@ impl PartialEq for FmtPValue {
     }
 }
 
+#[derive(Clone, Debug)]
+pub struct CandidateValue {
+    ice_candidate: ice::Candidate,
+}
+
+impl FromStr for CandidateValue {
+    type Err = ();
+
+    fn from_str(candidate_value: &str) -> Result<Self, Self::Err> {
+        let values = candidate_value.split(' ').collect::<Vec<&str>>();
+        if values.len() < 8 {
+            debug!("Invalid value for candidate");
+            return Err(())
+        }
+
+        let foundation = values[0].to_string();
+        let component_id = values[1].parse::<u16>().unwrap();
+        let proto = values[2].parse::<ice::Proto>().unwrap();
+        let priority = values[3].parse::<u32>().unwrap();
+        let conn = FromStr::from_str(values[4]).unwrap();
+        let port = values[5].parse::<u16>().unwrap();
+        let typ = values[6].to_string();
+        if typ != "typ" {
+            debug!("Invalid value for candidate, no 'typ' found");
+            return Err(())
+        }
+        let candidate_type = values[7].parse::<ice::CandidateType>().unwrap();
+
+        let mut rel_addr = None;
+        let mut rel_port = None;
+        if values.len() >= 12 {
+            let raddr = values[8].to_string();
+            if raddr != "raddr" {
+                debug!("No 'raddr' found");
+            } else {
+                rel_addr = Some(FromStr::from_str(values[9]).unwrap());
+            }
+
+            let rport = values[10].to_string();
+            if rport != "rport" {
+                debug!("No 'rport' found");
+            } else {
+                rel_port = Some(values[11].parse::<u16>().unwrap());
+            }
+        }
+
+        Ok(CandidateValue {
+            ice_candidate: ice::Candidate {
+                conn: conn,
+                port: port,
+                proto: proto,
+                foundation: foundation,
+                component_id: component_id,
+                priority: priority,
+                candidate_type: candidate_type,
+                rel_addr: rel_addr,
+                rel_port: rel_port,
+            }
+        })
+    }
+}
+
+impl ToString for CandidateValue {
+
+    fn to_string(&self) -> String {
+
+        let value = format!("{} {} {} {} {} {} typ {}", self.ice_candidate.foundation, self.ice_candidate.component_id, self.ice_candidate.proto.to_string(), self.ice_candidate.priority, self.ice_candidate.conn.to_string(), self.ice_candidate.port, self.ice_candidate.candidate_type.to_string());
+
+        match self.ice_candidate.rel_addr {
+            Some(rel_addr) => { format!("{} raddr {:?} rport {:?}", value, rel_addr, self.ice_candidate.rel_port) },
+            None => { value },
+        }
+    }
+}
+
+impl PartialEq for CandidateValue {
+    fn eq(&self, other: &CandidateValue) -> bool {
+        true
+        //self.ice_candidate == other.ice_candidate
+    }
+}
+
+
+#[derive(Clone, Debug)]
+pub struct IceUfragValue {
+    value: String,
+}
+
+impl PartialEq for IceUfragValue {
+    fn eq(&self, other: &IceUfragValue) -> bool {
+        self.value == other.value
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct IcePwdValue {
+    value: String,
+}
+
+impl PartialEq for IcePwdValue {
+    fn eq(&self, other: &IcePwdValue) -> bool {
+        self.value == other.value
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum Attr {
     SendRecv,
@@ -179,6 +285,11 @@ pub enum Attr {
     PTime(PTimeValue),
     RtpMap(RtpMapValue),
     FmtP(FmtPValue),
+    Candidate(CandidateValue),
+    IceUfrag(IceUfragValue),
+    IcePwd(IcePwdValue),
+    IceMismatch,
+    IceLite,
 }
 
 impl ToString for Attr {
@@ -211,6 +322,24 @@ impl ToString for Attr {
             Attr::FmtP(ref x) => {
                 name = "fmtp".to_string();
                 value = Some(x.to_string());
+            },
+            Attr::Candidate(ref x) => {
+                name = "candidate".to_string();
+                value = Some(x.to_string());
+            },
+            Attr::IceUfrag(IceUfragValue{value: ref x}) => {
+                name = "ice-ufrag".to_string();
+                value = Some(x.to_string());
+            },
+            Attr::IcePwd(IcePwdValue{value: ref x}) => {
+                name = "ice-pwd".to_string();
+                value = Some(x.to_string());
+            },
+            Attr::IceMismatch => {
+                name = "ice-mismatch".to_string();
+            },
+            Attr::IceLite => {
+                name = "ice-lite".to_string();
             },
         }
 
@@ -248,6 +377,23 @@ impl AttrFromStr for Attr {
                     attr_value.unwrap().parse::<FmtPValue>().unwrap()
                 ))
             },
+            "candidate" => {
+                Ok(Attr::Candidate(
+                    attr_value.unwrap().parse::<CandidateValue>().unwrap()
+                ))
+            },
+            "ice-ufrag" => {
+                Ok(Attr::IceUfrag(IceUfragValue{
+                    value: attr_value.unwrap().to_string(),
+                }))
+            },
+            "ice-pwd" => {
+                Ok(Attr::IcePwd(IcePwdValue{
+                    value: attr_value.unwrap().to_string(),
+                }))
+            },
+            "ice-mismatch"  => Ok(Attr::IceMismatch),
+            "ice-lite"  => Ok(Attr::IceLite),
             _           => Err(()),
         }
     }
@@ -287,7 +433,6 @@ pub struct SessionDescription {
 pub struct MediaDescription {
     pub media: Media,
     //title:
-    //conn:
     //bandwidth:
     //encrypt_key:
     pub attrs: Vec<Attr>
@@ -414,7 +559,10 @@ impl FromStr for NetType {
 pub enum MediaProto {
     Udp,
     RtpAvp,
+    RtpAvpf,
     RtpSavp,
+    RtpSavpf,
+    UdpTlsRtpSavpf,
 }
 
 impl ToString for MediaProto {
@@ -423,7 +571,10 @@ impl ToString for MediaProto {
         match *self {
             MediaProto::Udp => "UDP".to_string(),
             MediaProto::RtpAvp => "RTP/AVP".to_string(),
+            MediaProto::RtpAvpf => "RTP/AVPF".to_string(),
             MediaProto::RtpSavp => "RTP/SAVP".to_string(),
+            MediaProto::RtpSavpf => "RTP/SAVPF".to_string(),
+            MediaProto::UdpTlsRtpSavpf => "UDP/TLS/RTP/SAVPF".to_string(),
         }
     } 
 }
@@ -435,7 +586,10 @@ impl FromStr for MediaProto {
         match s {
             "UDP" => Ok(MediaProto::Udp),
             "RTP/AVP" => Ok(MediaProto::RtpAvp),
+            "RTP/AVPF" => Ok(MediaProto::RtpAvpf),
             "RTP/SAVP" => Ok(MediaProto::RtpSavp),
+            "RTP/SAVPF" => Ok(MediaProto::RtpSavpf),
+            "UDP/TLS/RTP/SAVPF" => Ok(MediaProto::UdpTlsRtpSavpf),
             _ => Err(()),
         }
     }
@@ -648,24 +802,20 @@ fn parse_line(line: &str) -> Option<SdpLine> {
 impl ToString for SessionDescription {
 
     fn to_string(&self) -> String {
-        let mut session_description = format!("v={}\n
-                 {}\n
-                 s={}\n
-                 i={}\n
-                 {}\n",
+        let mut session_description = format!("v={}\n{}s={}\n{}",
                  self.ver.unwrap(),
                  self.origin.clone().unwrap().to_string(),
                  self.name.clone().unwrap(),
-                 self.info.clone().unwrap(),
+                 //self.info.clone().unwrap(),
                  self.conn.clone().unwrap().to_string());
-
-        for i in 0..self.attrs.len() {
-            session_description = session_description + &self.attrs[i].to_string();
-        }
 
         session_description = session_description + &format!("t={} {}\n",
                  self.timing.clone().unwrap().start_time,
                  self.timing.clone().unwrap().stop_time);
+
+        for i in 0..self.attrs.len() {
+            session_description = session_description + &self.attrs[i].to_string();
+        }
 
         for i in 0..self.media.len() {
             session_description = session_description + &self.media[i].to_string();
@@ -673,119 +823,6 @@ impl ToString for SessionDescription {
 
         session_description
     } 
-}
-
-fn negotiate_media_stream(orig_media: MediaDescription, offer_media: &mut MediaDescription) -> bool {
-
-    if orig_media.media.media != offer_media.media.media {
-        debug!("Different media types [orig: {}, offer: {}", orig_media.media.media.to_string(), offer_media.media.media.to_string());
-        return false
-    }
-
-    if offer_media.media.proto != MediaProto::RtpAvp {
-        debug!("Media proto {} not supported", offer_media.media.proto.to_string());
-        return false
-    }
-
-    let mut found_match = true;
-    let offer_fmt =  offer_media.media.fmt.clone();
-    let result = offer_fmt.into_iter().filter(|x| orig_media.media.fmt.contains(x)).collect::<Vec<_>>();
-    //offer_media.media.fmt.retain(|x| !orig_media.media.fmt.contains(x));
-
-    if result.len() == 0 {
-        debug!("Media {} and {} are not a match", orig_media.to_string(), offer_media.to_string());
-        return false
-    }
-
-    debug!("Media {} and {} are a match: {}", orig_media.to_string(), offer_media.to_string(), result.len());
-
-    offer_media.media.fmt = result;
-
-    let mut filtered_attrs = vec![];
-    let offer_fmts = offer_media.media.fmt.clone();
-    for fmt in offer_fmts {
-        let value = fmt.parse::<u32>().unwrap();
-
-        let mut orig_attrs = orig_media.attrs.clone();
-        for orig_attr in orig_attrs.drain(0..) {
-            match orig_attr {
-                Attr::RtpMap(RtpMapValue{payload_type: x, ..}) => {
-                    if value != x {
-                        debug!("Different media fmt [orig: {}, offer: {}]", value, x);
-                        continue;
-                    }
-
-                    filtered_attrs.push(orig_attr);
-                },
-                _ => {},
-            }
-        }
-    }
-
-    let offer_attrs = filtered_attrs.clone();
-    let result = offer_attrs.into_iter().filter(|x| orig_media.attrs.contains(x)).collect::<Vec<_>>();
-
-    if result.len() == 0 {
-        debug!("attrs {:?} and {:?} are not a match", filtered_attrs, orig_media.attrs);
-        return false
-    }
-
-    debug!("Media is a match: {}", result[0].to_string());
-
-    let mut offer_media_attrs = offer_media.attrs.clone();
-    offer_media.attrs = result;
-    // For each of the attributes present on the offer, negotiate, and put the
-    // result on the answer
-    for offer_attr in &mut offer_media_attrs {
-        match *offer_attr {
-            Attr::SendOnly => {
-                offer_media.attrs.push(Attr::RecvOnly)
-            },
-            Attr::RecvOnly => {
-                offer_media.attrs.push(Attr::SendOnly)
-            },
-            Attr::SendRecv => {
-                offer_media.attrs.push(Attr::SendRecv)
-            },
-            Attr::Inactive => {
-                offer_media.attrs.push(Attr::Inactive)
-            },
-            Attr::PTime(ref x) => {
-                offer_media.attrs.push(Attr::PTime(x.clone()))
-            },
-            _ => {},
-        }
-    }
-
-    return found_match
-}
-
-pub fn negotiate_with(sdp_orig: Option<&SessionDescription>, sdp_offer: &SessionDescription) -> SessionDescription {
-
-    //TODO Negotiation based on RFC#3264
-
-    // Construct a new SDP based on the negotiation
-    if sdp_orig.is_some() {
-        let mut sdp_answer = sdp_offer.clone();
-
-        for answer_media in &mut sdp_answer.media {
-            let mut found_match = false;
-            for orig_media in sdp_orig.unwrap().media.iter() {
-                found_match = negotiate_media_stream(orig_media.clone(), answer_media);
-                if found_match {
-                    break
-                }
-            }
-
-            if !found_match {
-                answer_media.media.port = 0;
-            }
-        }
-
-        return sdp_answer
-    }
-
-    sdp_offer.clone()
 }
 
 fn parse_origin(text: &str) -> Option<Origin> {
@@ -942,3 +979,244 @@ fn parse_media(text: &str) -> Option<Media> {
     })
 }
 
+fn negotiate_media_stream(orig_media: MediaDescription, offer_media: &mut MediaDescription) -> bool {
+
+    if orig_media.media.media != offer_media.media.media {
+        debug!("Different media types [orig: {}, offer: {}", orig_media.media.media.to_string(), offer_media.media.media.to_string());
+        return false
+    }
+
+    if offer_media.media.proto != MediaProto::RtpAvp {
+        debug!("Media proto {} not supported", offer_media.media.proto.to_string());
+        return false
+    }
+
+    let mut found_match = true;
+    let offer_fmt =  offer_media.media.fmt.clone();
+    let result = offer_fmt.into_iter().filter(|x| orig_media.media.fmt.contains(x)).collect::<Vec<_>>();
+    //offer_media.media.fmt.retain(|x| !orig_media.media.fmt.contains(x));
+
+    if result.len() == 0 {
+        debug!("Media {} and {} are not a match", orig_media.to_string(), offer_media.to_string());
+        return false
+    }
+
+    debug!("Media {} and {} are a match: {}", orig_media.to_string(), offer_media.to_string(), result.len());
+
+    offer_media.media.fmt = result;
+
+    let mut filtered_attrs = vec![];
+    let offer_fmts = offer_media.media.fmt.clone();
+    for fmt in offer_fmts {
+        let value = fmt.parse::<u32>().unwrap();
+
+        let mut orig_attrs = orig_media.attrs.clone();
+        for orig_attr in orig_attrs.drain(0..) {
+            match orig_attr {
+                Attr::RtpMap(RtpMapValue{payload_type: x, ..}) => {
+                    if value != x {
+                        debug!("Different media fmt [orig: {}, offer: {}]", value, x);
+                        continue;
+                    }
+
+                    filtered_attrs.push(orig_attr);
+                },
+                _ => {},
+            }
+        }
+    }
+
+    let offer_attrs = filtered_attrs.clone();
+    let result = offer_attrs.into_iter().filter(|x| orig_media.attrs.contains(x)).collect::<Vec<_>>();
+
+    if result.len() == 0 {
+        debug!("attrs {:?} and {:?} are not a match", filtered_attrs, orig_media.attrs);
+        return false
+    }
+
+    debug!("Media is a match: {}", result[0].to_string());
+
+    let mut offer_media_attrs = offer_media.attrs.clone();
+    offer_media.attrs = result;
+    // For each of the attributes present on the offer, negotiate, and put the
+    // result on the answer
+    for offer_attr in &mut offer_media_attrs {
+        match *offer_attr {
+            Attr::SendOnly => {
+                offer_media.attrs.push(Attr::RecvOnly)
+            },
+            Attr::RecvOnly => {
+                offer_media.attrs.push(Attr::SendOnly)
+            },
+            Attr::SendRecv => {
+                offer_media.attrs.push(Attr::SendRecv)
+            },
+            Attr::Inactive => {
+                offer_media.attrs.push(Attr::Inactive)
+            },
+            Attr::PTime(ref x) => {
+                offer_media.attrs.push(Attr::PTime(x.clone()))
+            },
+            Attr::Candidate(ref x) => {
+                let mut ice = ice::Ice::new();
+                let candidate = ice.allocate_candidate();
+                let candidate = candidate.unwrap();
+
+                // This is the default, thus assign it in m=
+                offer_media.media.port = candidate.port;
+
+                debug!("Adding candidate {}", candidate.conn.to_string());
+
+                offer_media.attrs.push(Attr::Candidate(CandidateValue {
+                    ice_candidate: candidate,
+                }));
+
+            },
+            Attr::IceUfrag(ref x) => {
+                // Generate ufrag and pass
+                offer_media.attrs.push(Attr::IceUfrag(IceUfragValue {
+                    value: "Oyef7uvBlwafI3hT".to_string()
+                }));
+
+                offer_media.attrs.push(Attr::IcePwd(IcePwdValue {
+                    value: "T0teqPLNQQOf+5W+ls+P2p16".to_string()
+                }));
+            }
+            _ => {},
+        }
+    }
+
+    return found_match
+}
+
+fn set_media_stream(offer_media: &mut MediaDescription) {
+    let mut offer_media_attrs = offer_media.attrs.clone();
+    let mut final_attrs = vec![];
+    // For each of the attributes present on the offer, negotiate, and put the
+    // result on the answer
+    for offer_attr in &mut offer_media_attrs {
+        match *offer_attr {
+            Attr::SendOnly => {
+                final_attrs.push(Attr::RecvOnly)
+            },
+            Attr::RecvOnly => {
+                final_attrs.push(Attr::SendOnly)
+            },
+            Attr::SendRecv => {
+                final_attrs.push(Attr::SendRecv)
+            },
+            Attr::Inactive => {
+                final_attrs.push(Attr::Inactive)
+            },
+            Attr::PTime(ref x) => {
+                final_attrs.push(Attr::PTime(x.clone()))
+            },
+            Attr::Candidate(ref x) => {
+                let mut ice = ice::Ice::new();
+                let candidate = ice.allocate_candidate();
+                let candidate = candidate.unwrap();
+
+                // This is the default, thus assign it in m=
+                offer_media.media.port = candidate.port;
+
+                debug!("Adding candidate {}", candidate.conn.to_string());
+
+                final_attrs.push(Attr::Candidate(CandidateValue {
+                    ice_candidate: candidate,
+                }));
+
+            },
+            Attr::IceUfrag(ref x) => {
+                // Generate ufrag and pass
+                final_attrs.push(Attr::IceUfrag(IceUfragValue {
+                    value: "Oyef7uvBlwafI3hT".to_string()
+                }));
+
+                final_attrs.push(Attr::IcePwd(IcePwdValue {
+                    value: "T0teqPLNQQOf+5W+ls+P2p16".to_string()
+                }));
+            }
+            Attr::RtpMap(ref x) => {
+
+                final_attrs.push(Attr::RtpMap(x.clone()));
+            },
+            Attr::FmtP(ref x) => {
+
+                final_attrs.push(Attr::FmtP(x.clone()));
+            },
+            _ => {},
+        }
+    }
+
+    offer_media.attrs = final_attrs;
+}
+
+
+pub fn negotiate_with(sdp_orig: Option<&SessionDescription>, sdp_offer: &SessionDescription) -> SessionDescription {
+
+    // TODO Negotiation based on RFC#3264
+
+    // Construct a new SDP based on the negotiation
+    if sdp_orig.is_some() {
+        let mut sdp_answer = sdp_offer.clone();
+
+        for answer_media in &mut sdp_answer.media {
+            let mut found_match = false;
+            for orig_media in sdp_orig.unwrap().media.iter() {
+                found_match = negotiate_media_stream(orig_media.clone(), answer_media);
+                if found_match {
+                    break
+                }
+            }
+
+            if !found_match {
+                answer_media.media.port = 0;
+            }
+        }
+
+        // Add "ice-lite" attribute
+        sdp_answer.attrs.push(Attr::IceLite);
+
+        // TODO(tlam): Hack that only gets the candidate of the first m=
+        for answer_attr in &mut sdp_answer.media[0].attrs {
+            match *answer_attr {
+                Attr::Candidate(ref x) => {
+                    // Set connection
+                    let conn = sdp_answer.conn.as_mut().unwrap();
+                    conn.ip_address = x.ice_candidate.conn;
+
+                    break;
+                },
+                _ => {},
+            }
+        }
+
+        return sdp_answer
+    } else {
+        let mut sdp_answer = sdp_offer.clone();
+
+        for answer_media in &mut sdp_answer.media {
+            set_media_stream(answer_media);
+        }
+
+        // Add "ice-lite" attribute
+        sdp_answer.attrs.push(Attr::IceLite);
+
+        // TODO(tlam): Hack that only gets the candidate of the first m=
+        for answer_attr in &mut sdp_answer.media[0].attrs {
+            match *answer_attr {
+                Attr::Candidate(ref x) => {
+                    // Set connection
+                    let conn = sdp_answer.conn.as_mut().unwrap();
+                    conn.ip_address = x.ice_candidate.conn;
+
+                    break;
+                },
+                _ => {},
+            }
+
+        }
+
+        return sdp_answer
+    }
+}

@@ -17,6 +17,9 @@ opus = "0.2.0"
 rustc-serialize = "0.3.22"
 hyper = "0.10.4"
 uuid = { version = "0.4.0", features = ["v4"] }
+ifaces = "0.0.3"
+rustun = { path = "../rustun" }
+fibers = "0.1.6"
 
 [dependencies.log4rs]
 version = "0.4.8"

@@ -7,6 +7,7 @@ extern crate lazy_static;
 extern crate rustc_serialize;
 
 pub mod sdp;
+pub mod ice;
 pub mod protos;
 pub mod convo;
 

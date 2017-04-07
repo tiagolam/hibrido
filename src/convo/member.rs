@@ -4,16 +4,17 @@ use lazy_static;
 use self::uuid::Uuid;
 use std::collections::HashMap;
 use std::str::FromStr;
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::{Arc, Mutex};
 use std::net::{UdpSocket, SocketAddr};
 
 use sdp::{SessionDescription};
 use rir::rtp::{RtpSession, RtpPkt, RtpHeader};
+use ice;
 
 // TODO(tlam): There's possible high contention here, as all member creations
 // pass through here
 lazy_static! {
-    static ref members_by_id: Mutex<HashMap<String, Arc<RwLock<Member>>>> = {
+    static ref members_by_id: Mutex<HashMap<String, Arc<Mutex<Member>>>> = {
         let mut m = HashMap::new();
         Mutex::new(m)
     };
@@ -23,11 +24,12 @@ pub struct Member {
     pub id: String,
     pub sdp: SessionDescription,
     pub rtp_session: Option<RtpSession>,
+    pub ice: ice::Ice,
 }
 
 impl Member {
 
-    pub fn new(sdp: SessionDescription) -> Arc<RwLock<Member>> {
+    pub fn new(sdp: SessionDescription) -> Arc<Mutex<Member>> {
         let member_id: &str = &Uuid::new_v4().to_string();
 
         debug!("Creating a new member [{}]", member_id);
@@ -39,12 +41,12 @@ impl Member {
         };
 
         unsafe {
-            members_by_id.lock().unwrap().insert(member_id.to_string(), Arc::new(RwLock::new(member)));
+            members_by_id.lock().unwrap().insert(member_id.to_string(), Arc::new(Mutex::new(member)));
             return members_by_id.lock().unwrap().get(member_id).unwrap().clone();
         }
     }
 
-    pub fn get(id: &str) -> Option<Arc<RwLock<Member>>> {
+    pub fn get(id: &str) -> Option<Arc<Mutex<Member>>> {
         unsafe {
             if members_by_id.lock().unwrap().contains_key(id) {
                 return Some(members_by_id.lock().unwrap().get(id).unwrap().clone());
@@ -54,9 +56,12 @@ impl Member {
         }
     }
 
+    pub fn start_session(&self, &base_sdp) {
+    }
+
     pub fn init_audio(&mut self) {
-        let local_addr =  FromStr::from_str("127.0.0.1").unwrap();
-        let bind_socket = SocketAddr::new(local_addr, 0);
+        let local_addr =  FromStr::from_str("10.0.0.138"/*"192.168.2.186"*/).unwrap();
+        let bind_socket = SocketAddr::new(local_addr, 6000);
         let conn = UdpSocket::bind(bind_socket);
 
         let rtp_session = new_rtp_session(conn.unwrap(), self.sdp.clone());
@@ -91,6 +96,9 @@ impl Member {
         rtp_pkt
     }
 }
+
+
+
 
 pub fn new_rtp_session(conn: UdpSocket, sdp: SessionDescription) -> RtpSession {
 

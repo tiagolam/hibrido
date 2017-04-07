@@ -2,7 +2,7 @@ use lazy_static;
 use std::collections::HashMap;
 use std::boxed::Box;
 use std::str::FromStr;
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::{Arc, Mutex};
 use convo::member::Member;
 use sdp::{SessionDescription};
 use std::net::{UdpSocket, SocketAddr};
@@ -18,7 +18,7 @@ lazy_static! {
 
 pub struct Conference {
     pub id: String,
-    pub members: Mutex<HashMap<String, Arc<RwLock<Member>>>>,
+    pub members: Mutex<HashMap<String, Arc<Mutex<Member>>>>,
 
     // SDP bound to the conference. The first member to arrive sets
     // sets the SDP which the other member will have to accept.
@@ -58,7 +58,7 @@ impl Conference {
         }
     }
 
-    fn change_ips(sdp: &mut SessionDescription, sock_addr: SocketAddr) {
+    /*fn change_ips(sdp: &mut SessionDescription, sock_addr: SocketAddr) {
         let mut origin = sdp.origin.clone().unwrap();
         origin.ip_address = sock_addr.ip();
         sdp.origin = Some(origin);
@@ -66,11 +66,9 @@ impl Conference {
         for i in 0..sdp.media.len() {
             sdp.media[i].media.port = sock_addr.port();
         }
-    }
+    }*/
 
-    pub fn add_member(&self, member: Arc<RwLock<Member>>) -> Option<SessionDescription> {
-
-        self.members.lock().unwrap().insert(member.read().unwrap().id.clone(), member.clone());
+    pub fn add_member(&self, member: Arc<Mutex<Member>>) -> Option<SessionDescription> {
 
         let mut mutex = self.sdp.lock().unwrap();
         let mut sdp_answer_to_ret;
@@ -78,11 +76,11 @@ impl Conference {
             // If there's still no SDP bound to this convo, this is
             // the one
             Some(ref convo) => { 
-                debug!("Negotiating SDPs");
-                let mut sdp_answer = sdp::negotiate_with(Some(convo), &member.read().unwrap().sdp);
-                member.write().unwrap().init_audio();
+                debug!("Negotiating SDP with the conference");
+                let mut sdp_answer = sdp::negotiate_with(Some(convo), &member.lock().unwrap().sdp);
+                //member.lock().unwrap().init_audio();
 
-                Conference::change_ips(&mut sdp_answer, member.write().unwrap().rtp_session.as_ref().unwrap().conn.local_addr().unwrap());
+                //Conference::change_ips(&mut sdp_answer, member.write().unwrap().rtp_session.as_ref().unwrap().conn.local_addr().unwrap());
 
                 sdp_answer_to_ret = None;
 
@@ -91,34 +89,30 @@ impl Conference {
             None => {
                 // TODO Even though this is the first SDP, it still
                 //      needs to be negotiated with the platform
-                debug!("Bonding incoming SDP");
-                let mut sdp_answer:SessionDescription = sdp::negotiate_with(None, &member.read().unwrap().sdp);
+                debug!("Negotiating SDP with the platform");
+                let mut sdp_answer:SessionDescription = sdp::negotiate_with(None, &member.lock().unwrap().sdp);
 
-                member.write().unwrap().init_audio();
+                member.lock().unwrap().init_audio();
+//                let rtp_stream = RtpSession::connect_to(UdpSocket::bind("192.168.2.186:6000").unwrap(), "0.0.0.0:0".parse().unwrap());
 
-                Conference::change_ips(&mut sdp_answer, member.read().unwrap().rtp_session.as_ref().unwrap().conn.local_addr().unwrap());
+                //Conference::change_ips(&mut sdp_answer, member.read().unwrap().rtp_session.as_ref().unwrap().conn.local_addr().unwrap());
 
                 sdp_answer_to_ret = Some(sdp_answer.clone());
 
                 /**mutex = */Some(sdp_answer)
-                
+
                 //self.sdp.lock().unwrap().clone()
             },
         };
 
-        *mutex = sdp_answer_to_ret; 
+        *mutex = sdp_answer_to_ret;
+
+        self.members.lock().unwrap().insert(member.lock().unwrap().id.clone(), member.clone());
 
         var
-
-        // XXX HOW TO:
-        // Use ICE for the establishing the RTP session?
-        // How to deal with TURN and STUN?
-
-        // The SDP contains the candidates alreadt, so those should
-        // be used in order to create the rtp sessions?
     }
 
-    pub fn get_member(&self, id: &str) -> Option<Arc<RwLock<Member>>>  {
+    pub fn get_member(&self, id: &str) -> Option<Arc<Mutex<Member>>>  {
         if self.members.lock().unwrap().contains_key(id) {
             return Some(self.members.lock().unwrap().get(id).unwrap().clone());
         } else {
@@ -126,22 +120,26 @@ impl Conference {
         }
     }
 
-    pub fn process_engine(&self, member_local: Arc<RwLock<Member>>) {
+    pub fn process_engine(&self, member_local: Arc<Mutex<Member>>) {
 
-        let mut rtp_pkt = member_local.read().unwrap().read_audio();
+        debug!("Processing engine...");
+
+        let mutex = member_local.lock().unwrap();
+        let mut rtp_pkt = mutex.read_audio();
 
         debug!("Writing packet...");
 
+        mutex.write_audio(&rtp_pkt);
+        /*
         for member in self.members.lock().unwrap().values() /*i in 0..self.members.len()*/ {
-            let member_media = member.read().unwrap().sdp.media[0].clone().media.port;
-            let member_local_media = member_local.read().unwrap().sdp.media[0].clone().media.port;
+            let member_media = member.lock().unwrap().sdp.media[0].clone().media.port;
+            debug!("Writing packet... {}", member_media);
+            let member_local_media = member_local.lock().unwrap().sdp.media[0].clone().media.port;
+            debug!("Writing packet... {}", member_local_media);
             if member_media != member_local_media {
-                member.read().unwrap().write_audio(&rtp_pkt);
+                member.lock().unwrap().write_audio(&rtp_pkt);
             }
         }
+        */
     }
 }
-
-pub fn rm_member(member: Member) {
-}
-

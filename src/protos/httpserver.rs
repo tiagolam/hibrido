@@ -55,7 +55,7 @@ impl ToJson for MemberResponse {
     }
 }
 
-fn post_conference<'mw>(req: &mut Request, res: Response<'mw>) -> MiddlewareResult<'mw> {
+fn post_conference<'mw>(req: &mut Request, mut res: Response<'mw>) -> MiddlewareResult<'mw> {
 
     // Parse JSON
     let convo_post = req.json_as::<ConferencePost>().unwrap();
@@ -66,7 +66,9 @@ fn post_conference<'mw>(req: &mut Request, res: Response<'mw>) -> MiddlewareResu
     let response = ConferenceResponse {
         convo_id: convo.id.to_string(),
     };
- 
+
+    res.headers_mut().set_raw("Access-Control-Allow-Origin", vec![b"*".to_vec()]);
+
     // Compose response
     res.send(response.to_json())
 }
@@ -129,7 +131,7 @@ fn post_member<'mw>(req: &mut Request, mut res: Response<'mw>) -> MiddlewareResu
 
     let memberid;
     {
-        memberid = member.read().unwrap().id.clone();
+        memberid = member.lock().unwrap().id.clone();
     }
     // Compose response
     let response = MemberResponse {
@@ -143,6 +145,8 @@ fn post_member<'mw>(req: &mut Request, mut res: Response<'mw>) -> MiddlewareResu
             convo.process_engine(member.clone());
         }
     });
+
+    res.headers_mut().set_raw("Access-Control-Allow-Origin", vec![b"*".to_vec()]);
  
     res.send(response.to_json())
 }
@@ -167,7 +171,7 @@ fn get_conference_member<'mw>(req: &mut Request, mut res: Response<'mw>) -> Midd
     }
 
     let member = member.unwrap();
-    let member_lock = member.read().unwrap();
+    let member_lock = member.lock().unwrap();
     // Compose response
     let response = MemberResponse {
         member_id: member_lock.id.to_string(),
@@ -189,7 +193,7 @@ fn get_member<'mw>(req: &mut Request, mut res: Response<'mw>) -> MiddlewareResul
     }
 
     let member = member.unwrap();
-    let member_lock = member.read().unwrap();
+    let member_lock = member.lock().unwrap();
     // Compose response
     let response = MemberResponse {
         member_id: member_lock.id.to_string(),
@@ -197,6 +201,13 @@ fn get_member<'mw>(req: &mut Request, mut res: Response<'mw>) -> MiddlewareResul
     };
  
     res.send(response.to_json())
+}
+
+fn enable_cors<'mw>(_req: &mut Request, mut res: Response<'mw>) -> MiddlewareResult<'mw> {
+    res.headers_mut().set_raw("Access-Control-Allow-Headers", vec![b"content-type".to_vec()]);
+    res.headers_mut().set_raw("Access-Control-Allow-Methods", vec![b"POST, OPTIONS".to_vec()]);
+    res.headers_mut().set_raw("Access-Control-Allow-Origin", vec![b"*".to_vec()]);
+    res.send("")
 }
 
 impl handlers for HttpServer {
@@ -215,6 +226,8 @@ impl handlers for HttpServer {
         /*server.get("/user/:userid", middleware! { |request|
             format!("This is user: {:?}", request.param("userid"))
         });*/
+
+        server.utilize(enable_cors);
 
         server.listen("127.0.0.1:3080");
     }
