@@ -41,6 +41,8 @@ pub impl Session {
 
         // For each media session gather candidates accordingly
 
+        self.offer_sdp
+
         self.ice.gather_candidates(ice::CandidateTypes::Host);
     }
 

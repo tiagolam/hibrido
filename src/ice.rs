@@ -1,11 +1,14 @@
 extern crate ifaces;
 extern crate rustun;
 extern crate fibers;
+extern crate uuid;
 
 use std::str::FromStr;
 use std::net::IpAddr;
 use std::net::{UdpSocket, SocketAddr, SocketAddrV4};
 use std::thread;
+use std::collections::HashMap;
+use self::uuid::Uuid;
 
 use self::fibers::{Executor, InPlaceExecutor, Spawn};
 use self::rustun::server::UdpServer;
@@ -96,6 +99,17 @@ enum IceState {
     Completed,
 }
 
+enum StreamState {
+}
+
+struct Stream {
+    id: String,
+    state: StreamState,
+    nr_components: u8,
+    remote_candidates: Vec<Candidates>,
+    local_candidates: Vec<Vec<Candidate>>,
+}
+
 /*
 fn setup_stun_server(conn: SocketAddr) {
     let mut executor = InPlaceExecutor::new().unwrap();
@@ -107,25 +121,43 @@ fn setup_stun_server(conn: SocketAddr) {
 }
 */
 
-pub struct Ice {
+pub struct Agent {
     state: IceState,
     start_port: u16,
+    streams: HashMap<String, Stream>,
 }
 
 static mut START_PORT: u16 = 6000;
 
-impl Ice {
+impl Agent {
     pub fn new() -> Ice {
         Ice {
             state: IceState::Running,
             start_port: 6000,
+            streams: HashMap::new();
         }
     }
 
-    pub fn start_agent() {
+    /// Start agent and initiate the regular funtions
+    pub fn start() {
     }
 
-    pub fn gather_candidates(&mut self, candidate: CandidateType) -> Option<Candidate> {
+    /// Add new stream to the current agent, of the component provided
+    pub fn add_stream(&mut self) -> String {
+        // Add stream to agent
+        let stream_id: &str = &Uuid::new_v4().to_string();
+        let stream = Stream {
+            id: stream_id.to_owned_string(),
+            candidates: Vec::new(),
+        }
+
+        self.insert(stream_id.to_owned_string(), stream);
+
+        stream_id.to_owned_string()
+    }
+
+    /// Gather candidates for a particular stream
+    pub fn gather_strean_candidates(&mut self, strean_id: String, candidate: CandidateType) -> Option<Candidate> {
         let mut ipv4_addr = None;
         for iface in
             ifaces::Interface::get_all().unwrap()
