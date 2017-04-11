@@ -109,8 +109,8 @@ struct Stream {
     id: String,
     state: StreamState,
     nr_components: u8,
-    remote_candidates: Vec<Candidates>,
-    local_candidates: Vec<Vec<Candidate>>,
+    remote_candidates: HashMap<u16, Vec<Candidates>>,
+    local_candidates: HashMap<u16, Vec<Candidate>>,
 }
 
 /*
@@ -132,11 +132,38 @@ pub struct Agent {
 
 static mut START_PORT: u16 = 6000;
 
+/// Get IPv4 addresses only.
+fn get_ipv4_address() -> Option<SocketAddr> {
+
+    let ipv4_addr = None;
+
+    for iface in
+        ifaces::Interface::get_all().unwrap()
+                                    .into_iter() {
+        debug!("{}\t{:?}\t{:?}", iface.name, iface.kind, iface.addr);
+
+        // Avoid localhost IPs
+        if iface.name != "lo" {
+            match iface.kind {
+                ifaces::Kind::Ipv4 => {
+                    ipv4_addr = iface.addr;
+                    debug!("Chosen {:?}", iface.addr);
+
+                    // Return first IPv4 address found
+                    break;
+                },
+                _ => {},
+            };
+        }
+    }
+
+    ipv4_addr
+}
+
 impl Agent {
     pub fn new() -> Ice {
         Ice {
             state: IceState::Running,
-            start_port: 6000,
             streams: HashMap::new();
         }
     }
@@ -160,72 +187,59 @@ impl Agent {
     }
 
     /// Gather candidates for a particular stream
-    pub fn gather_candidates(&mut self, stream_id: String, nr_components: u8) {
+    pub fn gather_candidates(&mut self, stream_id: String, component_id: u16) {
         let stream = self.streams.get(stream_id);
 
-        for i in 0..nr_components {
-            let candidates = Vec::new()
-            let mut ipv4_addr = None;
-            for iface in
-                ifaces::Interface::get_all().unwrap()
-                                            .into_iter() {
-                debug!("{}\t{:?}\t{:?}", iface.name, iface.kind, iface.addr);
+        let ipv4_addr = get_ipv4_address();
 
-                // Avoid localhost IPs
-                if iface.name != "lo" {
-                    match iface.kind {
-                        ifaces::Kind::Ipv4 => {
-                            ipv4_addr = iface.addr;
-                            debug!("Chosen {:?}", iface.addr);
-
-                            break;
-                        },
-                        _ => {},
-                    };
-                }
-            }
-
-            if !ipv4_addr.is_some() {
-                return None
-            }
-
-            let mut ipv4_addr = ipv4_addr.unwrap();
-            unsafe {
-                ipv4_addr.set_port(START_PORT);
-                START_PORT += 1;
-            }
-            //let conn = UdpSocket::bind(ipv4_addr).unwrap();
-
-            let port = ipv4_addr.port();
-
-            //let skt = SocketAddr::new(ipv4_addr, port);
-
-            //setup_stun_server(ipv4_addr);
-            //let rtp_stream = RtpSession::connect_to(conn, "0.0.0.0:0".parse().unwrap())
-
-            // Get new candidate
-            let mut candidate = Candidate {
-                conn: ipv4_addr.ip(),
-                port: port,
-                proto: Proto::Udp,
-                foundation: "deadbeef".to_string(),
-                component_id: None,
-                priority: None,
-                candidate_type: CandidateType::Host,
-                rel_addr: None,
-                rel_port: None,
-            };
-            set_priority_candidate(candidate, component_id);
-
-            candidates.push(candidate);
-
-            // Add candidate to local candidates
-            stream.local_candidates.push(candidates);
+        if !ipv4_addr.is_some() {
+            return
         }
 
-        fn pair_candidates(&self) {
-            // TODO(tlam): Full implementation only
+        let candidates;
+        if stream.local_candidates.contains_key(component_id) {
+            candidates = stream.local_candidates.get(component_id);
+        } else {
+            candidates = Vec::new();
         }
+
+
+        let mut ipv4_addr = ipv4_addr.unwrap();
+        unsafe {
+            ipv4_addr.set_port(START_PORT);
+            START_PORT += 1;
+        }
+        //let conn = UdpSocket::bind(ipv4_addr).unwrap();
+
+        let port = ipv4_addr.port();
+
+        //let skt = SocketAddr::new(ipv4_addr, port);
+
+        //setup_stun_server(ipv4_addr);
+        //let rtp_stream = RtpSession::connect_to(conn, "0.0.0.0:0".parse().unwrap())
+
+        // Get new candidate
+        let mut candidate = Candidate {
+            conn: ipv4_addr.ip(),
+            port: port,
+            proto: Proto::Udp,
+            foundation: "deadbeef".to_string(),
+            component_id: None,
+            priority: None,
+            candidate_type: CandidateType::Host,
+            rel_addr: None,
+            rel_port: None,
+        };
+        set_priority_candidate(candidate, component_id);
+
+        candidates.push(candidate);
+
+        // Add candidate to local candidates
+        stream.local_candidates.push(candidates);
+    }
+
+    fn pair_candidates(&self) {
+        // TODO(tlam): Full implementation only
     }
 
     fn set_priority_candidate(candidate: mut Candidate, component_id: u16) {
