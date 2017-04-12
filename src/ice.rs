@@ -94,43 +94,42 @@ pub struct Candidate {
     pub rel_port: Option<u16>,
 }
 
-enum IceState {
-    Running,
-    Completed,
-}
-
-struct CheckList {
-}
-
 enum StreamState {
+    Running,
 }
 
 struct Stream {
     id: String,
     state: StreamState,
-    nr_components: u8,
-    remote_candidates: HashMap<u16, Vec<Candidates>>,
+    remote_candidates: HashMap<u16, Vec<Candidate>>,
     local_candidates: HashMap<u16, Vec<Candidate>>,
 }
 
-/*
-fn setup_stun_server(conn: SocketAddr) {
+enum IceState {
+    Running,
+    Completed,
+}
+
+pub struct Agent {
+    state: IceState,
+    streams: HashMap<String, Stream>,
+}
+
+static mut START_PORT: u16 = 6000;
+
+/// Setup STUN server on the port
+fn setup_stun_server(conn: UdpSocket) {
     let mut executor = InPlaceExecutor::new().unwrap();
 
     let spawner = executor.handle();
     let monitor = executor.spawn_monitor(UdpServer::new(conn)
                           .start(spawner.boxed(), BindingHandler::new("T0teqPLNQQOf+5W+ls+P2p16".to_string())));
     let result = executor.run_fiber(monitor).unwrap();
-}
-*/
 
-pub struct Agent {
-    state: IceState,
-    start_port: u16,
-    streams: HashMap<String, Stream>,
+    thread::spawn(move || {
+        let result = executor.run_fiber(monitor).unwrap();
+    });
 }
-
-static mut START_PORT: u16 = 6000;
 
 /// Get IPv4 addresses only.
 fn get_ipv4_address() -> Option<SocketAddr> {
@@ -161,10 +160,10 @@ fn get_ipv4_address() -> Option<SocketAddr> {
 }
 
 impl Agent {
-    pub fn new() -> Ice {
-        Ice {
+    pub fn new() -> Agent {
+        Agent {
             state: IceState::Running,
-            streams: HashMap::new();
+            streams: HashMap::new(),
         }
     }
 
@@ -177,18 +176,20 @@ impl Agent {
         // Add stream to agent
         let stream_id: &str = &Uuid::new_v4().to_string();
         let stream = Stream {
-            id: stream_id.to_owned_string(),
-            candidates: Vec::new(),
-        }
+            id: stream_id.to_string(),
+            state: StreamState::Running,
+            remote_candidates: HashMap::new(),
+            local_candidates: HashMap::new(),
+        };
 
-        self.insert(stream_id.to_owned_string(), stream);
+        self.streams.insert(stream_id.to_string(), stream);
 
-        stream_id.to_owned_string()
+        stream_id.to_string()
     }
 
     /// Gather candidates for a particular stream
-    pub fn gather_candidates(&mut self, stream_id: String, component_id: u16) {
-        let stream = self.streams.get(stream_id);
+    pub fn gather_candidates(&mut self, stream_id: &str, component_id: &u16) {
+        let stream = self.streams.get(stream_id).unwrap();
 
         let ipv4_addr = get_ipv4_address();
 
@@ -196,26 +197,20 @@ impl Agent {
             return
         }
 
-        let candidates;
-        if stream.local_candidates.contains_key(component_id) {
-            candidates = stream.local_candidates.get(component_id);
-        } else {
-            candidates = Vec::new();
-        }
-
+        let candidates: &mut Vec<Candidate> = stream.local_candidates.entry(*component_id).or_insert(Vec::new());
 
         let mut ipv4_addr = ipv4_addr.unwrap();
         unsafe {
             ipv4_addr.set_port(START_PORT);
             START_PORT += 1;
         }
-        //let conn = UdpSocket::bind(ipv4_addr).unwrap();
+        let conn = UdpSocket::bind(ipv4_addr).unwrap();
 
         let port = ipv4_addr.port();
 
         //let skt = SocketAddr::new(ipv4_addr, port);
 
-        //setup_stun_server(ipv4_addr);
+        setup_stun_server(conn);
         //let rtp_stream = RtpSession::connect_to(conn, "0.0.0.0:0".parse().unwrap())
 
         // Get new candidate
@@ -225,24 +220,21 @@ impl Agent {
             proto: Proto::Udp,
             foundation: "deadbeef".to_string(),
             component_id: None,
-            priority: None,
+            priority: 0,
             candidate_type: CandidateType::Host,
             rel_addr: None,
             rel_port: None,
         };
-        set_priority_candidate(candidate, component_id);
+        Agent::set_priority_candidate(candidate, *component_id);
 
         candidates.push(candidate);
-
-        // Add candidate to local candidates
-        stream.local_candidates.push(candidates);
     }
 
     fn pair_candidates(&self) {
         // TODO(tlam): Full implementation only
     }
 
-    fn set_priority_candidate(candidate: mut Candidate, component_id: u16) {
+    fn set_priority_candidate(mut candidate: Candidate, component_id: u16) {
         let priority = ((2^24)*(126) +
                         (2^8)*(65535) + // 65535 from #rfc5245
                         (2^0)*(256 - component_id)) as u32;

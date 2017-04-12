@@ -24,7 +24,7 @@ pub struct Member {
     pub id: String,
     pub sdp: SessionDescription,
     pub rtp_session: Option<RtpSession>,
-    pub ice: ice::Ice,
+    pub ice: ice::Agent,
 }
 
 impl Member {
