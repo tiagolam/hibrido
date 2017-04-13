@@ -285,9 +285,9 @@ pub enum Attr {
     PTime(PTimeValue),
     RtpMap(RtpMapValue),
     FmtP(FmtPValue),
-    Candidate(CandidateValue),
-    IceUfrag(IceUfragValue),
-    IcePwd(IcePwdValue),
+    pub Candidate(CandidateValue),
+    pub IceUfrag(IceUfragValue),
+    pub IcePwd(IcePwdValue),
     IceMismatch,
     IceLite,
 }

@@ -187,6 +187,12 @@ impl Agent {
         stream_id.to_string()
     }
 
+    pub fn get_stream_candidates(&self, stream_id: String, component_id: &u16) -> Vec<Candidate> {
+        let stream = self.streams.get(stream_id);
+
+        streams.local_candidates.get(component_id)
+    }
+
     /// Gather candidates for a particular stream
     pub fn gather_candidates(&mut self, stream_id: &str, component_id: &u16) {
         let stream = self.streams.get(stream_id).unwrap();
@@ -210,7 +216,7 @@ impl Agent {
 
         //let skt = SocketAddr::new(ipv4_addr, port);
 
-        setup_stun_server(conn);
+        //setup_stun_server(conn);
         //let rtp_stream = RtpSession::connect_to(conn, "0.0.0.0:0".parse().unwrap())
 
         // Get new candidate
