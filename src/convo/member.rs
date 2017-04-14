@@ -9,7 +9,7 @@ use std::net::{UdpSocket, SocketAddr};
 
 use sdp::{SessionDescription};
 use rir::rtp::{RtpSession, RtpPkt, RtpHeader};
-use ice;
+use convo::session_negotiation::{Session};
 
 // TODO(tlam): There's possible high contention here, as all member creations
 // pass through here
@@ -24,7 +24,7 @@ pub struct Member {
     pub id: String,
     pub sdp: SessionDescription,
     pub rtp_session: Option<RtpSession>,
-    pub ice: ice::Agent,
+    pub session: Session,
 }
 
 impl Member {
@@ -36,8 +36,9 @@ impl Member {
 
         let member = Member {
             id: member_id.to_string(),
-            sdp: sdp,
+            sdp: sdp.clone(),
             rtp_session: None,
+            session: Session::new(sdp),
         };
 
         unsafe {
@@ -54,9 +55,6 @@ impl Member {
                 return None;
             }
         }
-    }
-
-    pub fn start_session(&self, &base_sdp) {
     }
 
     pub fn init_audio(&mut self) {

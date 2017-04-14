@@ -173,7 +173,7 @@ impl PartialEq for FmtPValue {
 
 #[derive(Clone, Debug)]
 pub struct CandidateValue {
-    ice_candidate: ice::Candidate,
+    pub ice_candidate: ice::Candidate,
 }
 
 impl FromStr for CandidateValue {
@@ -223,7 +223,7 @@ impl FromStr for CandidateValue {
                 port: port,
                 proto: proto,
                 foundation: foundation,
-                component_id: component_id,
+                component_id: Some(component_id),
                 priority: priority,
                 candidate_type: candidate_type,
                 rel_addr: rel_addr,
@@ -237,7 +237,7 @@ impl ToString for CandidateValue {
 
     fn to_string(&self) -> String {
 
-        let value = format!("{} {} {} {} {} {} typ {}", self.ice_candidate.foundation, self.ice_candidate.component_id, self.ice_candidate.proto.to_string(), self.ice_candidate.priority, self.ice_candidate.conn.to_string(), self.ice_candidate.port, self.ice_candidate.candidate_type.to_string());
+        let value = format!("{} {} {} {} {} {} typ {}", self.ice_candidate.foundation, self.ice_candidate.component_id.unwrap(), self.ice_candidate.proto.to_string(), self.ice_candidate.priority, self.ice_candidate.conn.to_string(), self.ice_candidate.port, self.ice_candidate.candidate_type.to_string());
 
         match self.ice_candidate.rel_addr {
             Some(rel_addr) => { format!("{} raddr {:?} rport {:?}", value, rel_addr, self.ice_candidate.rel_port) },
@@ -285,9 +285,9 @@ pub enum Attr {
     PTime(PTimeValue),
     RtpMap(RtpMapValue),
     FmtP(FmtPValue),
-    pub Candidate(CandidateValue),
-    pub IceUfrag(IceUfragValue),
-    pub IcePwd(IcePwdValue),
+    Candidate(CandidateValue),
+    IceUfrag(IceUfragValue),
+    IcePwd(IcePwdValue),
     IceMismatch,
     IceLite,
 }
@@ -1057,21 +1057,6 @@ fn negotiate_media_stream(orig_media: MediaDescription, offer_media: &mut MediaD
             Attr::PTime(ref x) => {
                 offer_media.attrs.push(Attr::PTime(x.clone()))
             },
-            Attr::Candidate(ref x) => {
-                let mut ice = ice::Ice::new();
-                let candidate = ice.allocate_candidate();
-                let candidate = candidate.unwrap();
-
-                // This is the default, thus assign it in m=
-                offer_media.media.port = candidate.port;
-
-                debug!("Adding candidate {}", candidate.conn.to_string());
-
-                offer_media.attrs.push(Attr::Candidate(CandidateValue {
-                    ice_candidate: candidate,
-                }));
-
-            },
             Attr::IceUfrag(ref x) => {
                 // Generate ufrag and pass
                 offer_media.attrs.push(Attr::IceUfrag(IceUfragValue {
@@ -1110,21 +1095,6 @@ fn set_media_stream(offer_media: &mut MediaDescription) {
             },
             Attr::PTime(ref x) => {
                 final_attrs.push(Attr::PTime(x.clone()))
-            },
-            Attr::Candidate(ref x) => {
-                let mut ice = ice::Ice::new();
-                let candidate = ice.allocate_candidate();
-                let candidate = candidate.unwrap();
-
-                // This is the default, thus assign it in m=
-                offer_media.media.port = candidate.port;
-
-                debug!("Adding candidate {}", candidate.conn.to_string());
-
-                final_attrs.push(Attr::Candidate(CandidateValue {
-                    ice_candidate: candidate,
-                }));
-
             },
             Attr::IceUfrag(ref x) => {
                 // Generate ufrag and pass

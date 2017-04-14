@@ -16,8 +16,8 @@ use self::rustun::rfc5389::handlers::BindingHandler;
 
 use rir::rtp::{RtpSession, RtpPkt, RtpHeader};
 
-const RTP_COMPONENT_ID: u16 = 1;
-const RTCP_COMPONENT_ID: u16 = 2;
+pub const RTP_COMPONENT_ID: u16 = 1;
+pub const RTCP_COMPONENT_ID: u16 = 2;
 
 #[derive(Clone, Debug)]
 pub enum Proto {
@@ -124,7 +124,6 @@ fn setup_stun_server(conn: UdpSocket) {
     let spawner = executor.handle();
     let monitor = executor.spawn_monitor(UdpServer::new(conn)
                           .start(spawner.boxed(), BindingHandler::new("T0teqPLNQQOf+5W+ls+P2p16".to_string())));
-    let result = executor.run_fiber(monitor).unwrap();
 
     thread::spawn(move || {
         let result = executor.run_fiber(monitor).unwrap();
@@ -134,8 +133,7 @@ fn setup_stun_server(conn: UdpSocket) {
 /// Get IPv4 addresses only.
 fn get_ipv4_address() -> Option<SocketAddr> {
 
-    let ipv4_addr = None;
-
+    let mut ipv4_addr = None;
     for iface in
         ifaces::Interface::get_all().unwrap()
                                     .into_iter() {
@@ -168,7 +166,7 @@ impl Agent {
     }
 
     /// Start agent and initiate the regular functions
-    pub fn start() {
+    pub fn start(&self) {
     }
 
     /// Add new stream to the current agent, of the component provided
@@ -187,18 +185,17 @@ impl Agent {
         stream_id.to_string()
     }
 
-    pub fn get_stream_candidates(&self, stream_id: String, component_id: &u16) -> Vec<Candidate> {
-        let stream = self.streams.get(stream_id);
+    pub fn get_stream_candidates(&self, stream_id: &str, component_id: &u16) -> &Vec<Candidate> {
+        let stream = self.streams.get(stream_id).unwrap();
 
-        streams.local_candidates.get(component_id)
+        stream.local_candidates.get(component_id).unwrap()
     }
 
     /// Gather candidates for a particular stream
     pub fn gather_candidates(&mut self, stream_id: &str, component_id: &u16) {
-        let stream = self.streams.get(stream_id).unwrap();
+        let mut stream = self.streams.get_mut(stream_id).unwrap();
 
         let ipv4_addr = get_ipv4_address();
-
         if !ipv4_addr.is_some() {
             return
         }
@@ -231,7 +228,7 @@ impl Agent {
             rel_addr: None,
             rel_port: None,
         };
-        Agent::set_priority_candidate(candidate, *component_id);
+        Agent::set_priority_candidate(&mut candidate, *component_id);
 
         candidates.push(candidate);
     }
@@ -240,7 +237,7 @@ impl Agent {
         // TODO(tlam): Full implementation only
     }
 
-    fn set_priority_candidate(mut candidate: Candidate, component_id: u16) {
+    fn set_priority_candidate(candidate: &mut Candidate, component_id: u16) {
         let priority = ((2^24)*(126) +
                         (2^8)*(65535) + // 65535 from #rfc5245
                         (2^0)*(256 - component_id)) as u32;
