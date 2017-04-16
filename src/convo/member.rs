@@ -76,16 +76,6 @@ impl Member {
         self.session.answer_sdp.clone().unwrap()
     }
 
-    pub fn init_audio(&mut self) {
-        let local_addr =  FromStr::from_str("10.0.0.138"/*"192.168.2.186"*/).unwrap();
-        let bind_socket = SocketAddr::new(local_addr, 6000);
-        let conn = UdpSocket::bind(bind_socket);
-
-        let rtp_session = new_rtp_session(conn.unwrap(), self.sdp.clone());
-
-        self.rtp_session = Some(rtp_session);
-    }
-
     pub fn write_audio(&self, rtp_pkt: &RtpPkt) {
         debug!("Writing packet to port {}", self.sdp.media[0].clone().media.port);
         self.rtp_session.as_ref().unwrap().write(rtp_pkt);
@@ -113,19 +103,3 @@ impl Member {
         rtp_pkt
     }
 }
-
-
-
-
-pub fn new_rtp_session(conn: UdpSocket, sdp: SessionDescription) -> RtpSession {
-
-    let ip_addr = sdp.origin.unwrap().ip_address;
-    let port = sdp.media[0].media.port;
-
-    debug!("Connecting to endpoint {}:{}", ip_addr, port);
-
-    let rtp_stream = RtpSession::connect_to(conn, SocketAddr::new(ip_addr, port));
-    
-    rtp_stream
-}
-

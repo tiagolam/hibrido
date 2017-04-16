@@ -225,7 +225,7 @@ impl Agent {
             port: port,
             proto: Proto::Udp,
             foundation: "deadbeef".to_string(),
-            component_id: None,
+            component_id: Some(*component_id),
             priority: 0,
             candidate_type: CandidateType::Host,
             rel_addr: None,
@@ -241,9 +241,9 @@ impl Agent {
     }
 
     fn set_priority_candidate(candidate: &mut Candidate, component_id: u16) {
-        let priority = ((2^24)*(126) +
-                        (2^8)*(65535) + // 65535 from #rfc5245
-                        (2^0)*(256 - component_id)) as u32;
+        let priority = ((2^24 as u32)*(126 as u32) +
+                        (2^8 as u32)*(65535 as u32) + // 65535 from #rfc5245
+                        (2^0 as u32)*((256 - component_id) as u32)) as u32;
 
         candidate.priority = priority;
     }

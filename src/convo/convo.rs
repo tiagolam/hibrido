@@ -128,6 +128,7 @@ impl Conference {
         debug!("Processing engine...");
 
         let mutex = member_local.lock().unwrap();
+        debug!("Reading audio...");
         let mut rtp_pkt = mutex.read_audio();
 
         debug!("Writing packet...");
