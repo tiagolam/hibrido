@@ -34,11 +34,16 @@ impl Member {
 
         debug!("Creating a new member [{}]", member_id);
 
+        let mut session = Session::new(sdp.clone());
+
+        // TODO(tlam): Remove logic from init function
+        session.process_offer();
+
         let member = Member {
             id: member_id.to_string(),
-            sdp: sdp.clone(),
+            sdp: sdp,
             rtp_session: None,
-            session: Session::new(sdp),
+            session: session,
         };
 
         unsafe {
@@ -55,6 +60,20 @@ impl Member {
                 return None;
             }
         }
+    }
+
+    pub fn negotiate_session(&mut self, base_sdp: Option<SessionDescription>) {
+        // Pass base SDP and negotiate with session's offer
+        let sdp_answer = self.session.negotiate_with_base_sdp(base_sdp);
+
+        // Now that we have the answer we can process it
+        self.session.process_answer();
+
+        sdp_answer
+    }
+
+    pub fn get_session_answer(&self) -> SessionDescription {
+        self.session.answer_sdp.clone().unwrap()
     }
 
     pub fn init_audio(&mut self) {

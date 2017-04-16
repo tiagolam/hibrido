@@ -185,10 +185,13 @@ impl Agent {
         stream_id.to_string()
     }
 
-    pub fn get_stream_candidates(&self, stream_id: &str, component_id: &u16) -> &Vec<Candidate> {
-        let stream = self.streams.get(stream_id).unwrap();
+    pub fn get_stream_candidates(&self, stream_id: &str, component_id: &u16) -> Option<&Vec<Candidate>> {
+        let stream = match self.streams.get(stream_id) {
+            Some(stream) => { stream },
+            None => { return None },
+        };
 
-        stream.local_candidates.get(component_id).unwrap()
+        stream.local_candidates.get(component_id)
     }
 
     /// Gather candidates for a particular stream

@@ -11,7 +11,7 @@ enum SessionState {
 pub struct Session {
     offer_sdp: SessionDescription,
     base_sdp: Option<SessionDescription>,
-    answer_sdp: Option<SessionDescription>,
+    pub answer_sdp: Option<SessionDescription>,
     state: SessionState,
     ice: ice::Agent,
     sdp_to_ice: Vec<String>,
@@ -59,7 +59,8 @@ impl Session {
         for media in self.offer_sdp.media.iter_mut() {
             let ref stream_id = self.sdp_to_ice[i];
 
-            let candidates = self.ice.get_stream_candidates(stream_id, &ice::RTP_COMPONENT_ID);
+            let tmp_candidates = Vec::new();
+            let candidates = self.ice.get_stream_candidates(stream_id, &ice::RTP_COMPONENT_ID).unwrap_or(&tmp_candidates);
 
             for candidate in candidates.iter() {
                 debug!("Adding candidate {}", candidate.conn.to_string());
@@ -72,11 +73,17 @@ impl Session {
         }
     }
 
-    pub fn negotiate_with_base_sdp(&mut self, base_sdp: SessionDescription) {
+    pub fn negotiate_with_base_sdp(&mut self, base_sdp: Option<SessionDescription>) {
         // Negotiate base SDP with SDP offer
         // The SDP answer will come out of this, and will need to be put
         // through process_answer
-        self.base_sdp = Some(base_sdp);
+        if !base_sdp.is_some() {
+            self.answer_sdp = Some(self.offer_sdp.clone());
+
+            return;
+        }
+
+        self.base_sdp = base_sdp;
 
         let mut sdp_answer = sdp::negotiate_with(self.base_sdp.as_ref(), &self.offer_sdp);
         self.answer_sdp = Some(sdp_answer);

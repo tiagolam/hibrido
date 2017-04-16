@@ -72,7 +72,7 @@ impl Conference {
 
         let mut mutex = self.sdp.lock().unwrap();
         let mut sdp_answer_to_ret;
-        let var = match (*mutex) {
+        let var = match *mutex {
             // If there's still no SDP bound to this convo, this is
             // the one
             Some(ref convo) => { 
@@ -90,16 +90,19 @@ impl Conference {
                 // TODO Even though this is the first SDP, it still
                 //      needs to be negotiated with the platform
                 debug!("Negotiating SDP with the platform");
-                let mut sdp_answer:SessionDescription = sdp::negotiate_with(None, &member.lock().unwrap().sdp);
+                //let mut sdp_answer:SessionDescription = sdp::negotiate_with(None, &member.lock().unwrap().sdp);
+                let mut member_lock = member.lock().unwrap();
+                member_lock.negotiate_session(None);
+                let sdp_answer = member_lock.get_session_answer();
 
-                member.lock().unwrap().init_audio();
+                //member_lock.init_audio();
 //                let rtp_stream = RtpSession::connect_to(UdpSocket::bind("192.168.2.186:6000").unwrap(), "0.0.0.0:0".parse().unwrap());
 
                 //Conference::change_ips(&mut sdp_answer, member.read().unwrap().rtp_session.as_ref().unwrap().conn.local_addr().unwrap());
 
                 sdp_answer_to_ret = Some(sdp_answer.clone());
 
-                /**mutex = */Some(sdp_answer)
+                /**mutex = */Some(sdp_answer.clone())
 
                 //self.sdp.lock().unwrap().clone()
             },
