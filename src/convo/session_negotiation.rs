@@ -1,7 +1,9 @@
 use std::collections::HashMap;
 use std::net::{UdpSocket, IpAddr, SocketAddr};
+use std::boxed::Box;
 
 use rir::rtp::{RtpSession};
+use rir::handlers::{CallbackType};
 use sdp::{SessionDescription, Attr, CandidateValue};
 use ice;
 use sdp;
@@ -118,20 +120,24 @@ impl Session {
         let bind_socket = SocketAddr::new(conn, port);
         let conn = UdpSocket::bind(bind_socket);
 
-        let rtp_session = new_rtp_session(conn.unwrap(), self.offer_sdp.clone());
+        let rtp_session = new_rtp_session(conn.unwrap(), self.offer_sdp.clone(), Box::new(use_candidate_callback));
 
         rtp_session
     }
 }
 
-pub fn new_rtp_session(conn: UdpSocket, sdp: SessionDescription) -> RtpSession {
+pub fn use_candidate_callback(callback_type: CallbackType) {
+    debug!("Received callback {:?}!", callback_type);
+}
+
+pub fn new_rtp_session(conn: UdpSocket, sdp: SessionDescription, callback: Box<Fn(CallbackType) + Send>) -> RtpSession {
 
     let ip_addr = sdp.origin.unwrap().ip_address;
     let port = sdp.media[0].media.port;
 
     debug!("Connecting to endpoint {}:{}", ip_addr, port);
 
-    let rtp_stream = RtpSession::connect_to(conn, SocketAddr::new(ip_addr, port));
+    let rtp_stream = RtpSession::connect_to(conn, SocketAddr::new(ip_addr, port), callback);
 
     rtp_stream
 }
