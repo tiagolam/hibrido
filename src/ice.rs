@@ -2,6 +2,8 @@ extern crate ifaces;
 extern crate rustun;
 extern crate fibers;
 extern crate uuid;
+extern crate timer;
+extern crate time;
 
 use std::str::FromStr;
 use std::net::IpAddr;
@@ -9,17 +11,21 @@ use std::net::{UdpSocket, SocketAddr, SocketAddrV4};
 use std::thread;
 use std::collections::HashMap;
 use self::uuid::Uuid;
+use std::sync::{mpsc};
 
+use self::timer::Timer;
+use self::time::Duration;
 use self::fibers::{Executor, InPlaceExecutor, Spawn};
 use self::rustun::server::UdpServer;
 use self::rustun::rfc5389::handlers::BindingHandler;
 
 use rir::rtp::{RtpSession, RtpPkt, RtpHeader};
+use convo::session_negotiation::Session;
 
 pub const RTP_COMPONENT_ID: u16 = 1;
 pub const RTCP_COMPONENT_ID: u16 = 2;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Proto {
     Udp,
     Tcp,
@@ -94,14 +100,24 @@ pub struct Candidate {
     pub rel_port: Option<u16>,
 }
 
+pub struct PairCandidate {
+    // TODO(tlam): Use references and lifetimes here
+    local_candidate: Candidate,
+    peer_candidate: Candidate,
+}
+
+#[derive(PartialEq)]
 enum StreamState {
     Running,
+    Completed,
 }
 
 struct Stream {
     id: String,
     state: StreamState,
-    remote_candidates: HashMap<u16, Vec<Candidate>>,
+    check_list: HashMap<u16, Vec<PairCandidate>>,
+    valid_list: HashMap<u16, Vec<PairCandidate>>,
+    offer_candidates: HashMap<u16, Vec<Candidate>>,
     local_candidates: HashMap<u16, Vec<Candidate>>,
 }
 
@@ -113,6 +129,7 @@ enum IceState {
 pub struct Agent {
     state: IceState,
     streams: HashMap<String, Stream>,
+    handler: Option<Box<Handler + Send>>,
 }
 
 static mut START_PORT: u16 = 6000;
@@ -157,16 +174,49 @@ fn get_ipv4_address() -> Option<SocketAddr> {
     ipv4_addr
 }
 
+pub trait Handler {
+    fn handle_callback(&self);
+}
+
 impl Agent {
     pub fn new() -> Agent {
         Agent {
             state: IceState::Running,
             streams: HashMap::new(),
+            // TODO(tlam): Miss the Option wrapper so we can use this without
+            // having to place checks all around the callbacks code
+            handler: None,
         }
     }
 
     /// Start agent and initiate the regular functions
-    pub fn start(&self) {
+    pub fn start(&mut self, handler: Box<Handler + Send>) {
+        let (tx, rx) = mpsc::channel();
+        let timer = Timer::new();
+
+        self.handler = Some(handler);
+
+        loop {
+            let sync_tx = tx.clone();
+            timer.schedule_with_delay(Duration::milliseconds(1000 as i64),
+                move || {
+                    sync_tx.send(1).unwrap();
+                }
+            );
+
+            rx.recv();
+
+            let mut found = false;
+            for (_, stream) in self.streams.iter() {
+                if stream.state != StreamState::Completed {
+                    found = true;
+                }
+            }
+
+            if !found {
+                self.state = IceState::Completed;
+            }
+        }
     }
 
     /// Add new stream to the current agent, of the component provided
@@ -176,13 +226,25 @@ impl Agent {
         let stream = Stream {
             id: stream_id.to_string(),
             state: StreamState::Running,
-            remote_candidates: HashMap::new(),
+            check_list: HashMap::new(),
+            valid_list: HashMap::new(),
+            offer_candidates: HashMap::new(),
             local_candidates: HashMap::new(),
         };
 
         self.streams.insert(stream_id.to_string(), stream);
 
         stream_id.to_string()
+    }
+
+    pub fn add_offer_candidate(&mut self, stream_id: &str, component_id: &u16, candidate: Candidate) {
+        let mut stream = match self.streams.get_mut(stream_id) {
+            Some(stream) => { stream },
+            None => { return },
+        };
+
+        let candidates: &mut Vec<Candidate> = stream.offer_candidates.entry(*component_id).or_insert(Vec::new());
+        candidates.push(candidate);
     }
 
     pub fn get_stream_candidates(&self, stream_id: &str, component_id: &u16) -> Option<&Vec<Candidate>> {
@@ -236,8 +298,42 @@ impl Agent {
         candidates.push(candidate);
     }
 
-    fn pair_candidates(&self) {
-        // TODO(tlam): Full implementation only
+    fn pair_candidates(&mut self, stream_id: &str, component_id: &u16) {
+        // Compare remote candidates to local candidates as rfc#5245:
+        // - They have same component;
+        // - They utilize same transport protocol;
+        // - Same IP family (IPv4 and IPv6).
+        let mut stream = match self.streams.get_mut(stream_id) {
+            Some(stream) => { stream },
+            None => { return },
+        };
+
+        for candidate in stream.local_candidates.get(component_id).unwrap().iter() {
+            for peer_candidate in stream.offer_candidates.get(component_id).unwrap().iter() {
+                if candidate.proto == peer_candidate.proto {
+                    if is_ipv4(&candidate.conn) && is_ipv4(&peer_candidate.conn) {
+                        debug!("Found pair candidate! {:?}:{:?}", candidate.conn, peer_candidate.conn);
+                        let pairs: &mut Vec<PairCandidate> = stream.valid_list.entry(*component_id).or_insert(Vec::new());
+                        pairs.push(PairCandidate {
+                            local_candidate: candidate.clone(),
+                            peer_candidate: peer_candidate.clone(),
+                        });
+                    }
+                }
+            }
+        }
+
+        if trigger_state_change(stream, component_id) {
+            // If there was a state change, trigger callback
+            match self.handler {
+                Some(ref h) => {
+                    h.handle_callback();
+                },
+                None => {
+                    info!("Undelivered event. No callback set!");
+                },
+            }
+        }
     }
 
     fn set_priority_candidate(candidate: &mut Candidate, component_id: u16) {
@@ -253,3 +349,32 @@ impl Agent {
         //              however there's no process in place right now.
     }
 }
+
+fn trigger_state_change(stream: &mut Stream, component_id: &u16) -> bool {
+    // Check if valid list as pairs por all components
+    // TODO(tlam): What if there is more than one candidate per component?
+    // (which can happen in dual IPv4 and IPv6 stacks)
+    if stream.local_candidates.len() == stream.valid_list.len() {
+        stream.state = StreamState::Completed;
+
+        return true
+    }
+
+    false
+}
+
+fn is_ipv4(conn: &IpAddr) -> bool {
+    match *conn {
+        IpAddr::V4(ref x) => {
+            debug!("Ipv4 address found");
+
+            return true
+        },
+        IpAddr::V6(_) => {
+            debug!("Ipv6 address found");
+
+            return false
+        },
+    }
+}
+

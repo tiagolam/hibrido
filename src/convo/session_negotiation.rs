@@ -22,12 +22,16 @@ pub struct Session {
     media_sessions: HashMap<String, RtpSession>,
 }
 
-impl Session {
+impl ice::Handler for Session {
+    fn handle_callback(&self) {
+        debug!("Received ICE callback!");
+    }
+}
 
+impl Session {
     // TODO(tlam): Do NOT assume ICE support
     pub fn new(offer_sdp: SessionDescription) -> Session {
         let ice = ice::Agent::new();
-        ice.start();
 
         Session {
             offer_sdp: offer_sdp,
@@ -53,7 +57,16 @@ impl Session {
             self.ice.gather_candidates(&stream_id, &ice::RTP_COMPONENT_ID);
             //self.gather_candidates(stream_id, ice::RTCP_COMPONENT_ID);
 
-            self.sdp_to_ice.push(stream_id);
+            self.sdp_to_ice.push(stream_id.clone());
+
+            for attr in media.attrs.iter() {
+                match *attr {
+                    Attr::Candidate(ref c) => {
+                        self.ice.add_offer_candidate(&stream_id, &ice::RTP_COMPONENT_ID, c.ice_candidate.clone());
+                    },
+                    _ => {},
+                }
+            }
         }
     }
 
