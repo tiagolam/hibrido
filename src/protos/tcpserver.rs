@@ -79,6 +79,7 @@ impl tcp {
 
         // Create new convo or return an alrady existing one
         let convo = Conference::new(convo_id);
+        convo.init();
         
 /*        let local_addr =  FromStr::from_str("127.0.0.1").unwrap();
         let bind_socket = SocketAddr::new(local_addr, 0);
@@ -96,7 +97,7 @@ impl tcp {
             //let mut convo_lock = convo.write().unwrap();
             debug!("convo set up2...");
             // Add member / SDP to the convo, negotiating the SDPs
-            sdp_answer = convo.add_member(member.clone());
+            sdp_answer = convo.add_member(member);
 
             // Return any response errors, like the negotiating
             // between the SDPs failing, or because the parse
@@ -104,13 +105,6 @@ impl tcp {
 
             debug!("SDP Answer {}", sdp_answer.clone().unwrap().to_string());
             stream.write(sdp_answer.clone().unwrap().to_string().as_bytes());
-        }
-
-        loop {
-            //{
-                //let convo_lock = convo.unwrap();
-                convo.process_engine(member.clone());
-            //}
         }
     }
 }

@@ -11,9 +11,9 @@ path = "src/main.rs"
 log = "0.3.6"
 byteorder = "0.5.3"
 lazy_static = "=0.2.1"
-nickel = "0.9.0"
+nickel = "0.10.0"
 rir = { path = "../rir" }
-opus = "0.2.0"
+opus = { path = "../opus-rs" }
 rustc-serialize = "0.3.22"
 hyper = "0.10.4"
 timer = "0.1.6"

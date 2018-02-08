@@ -1117,6 +1117,7 @@ fn set_media_stream(offer_media: &mut MediaDescription) {
             _ => {},
         }
     }
+    offer_media.media.port = 9;
 
     offer_media.attrs = final_attrs;
 }

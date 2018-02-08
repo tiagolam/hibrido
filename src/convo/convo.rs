@@ -3,10 +3,14 @@ use std::collections::HashMap;
 use std::boxed::Box;
 use std::str::FromStr;
 use std::sync::{Arc, Mutex};
+use std::{thread, time};
 use convo::member::Member;
 use sdp::{SessionDescription};
 use std::net::{UdpSocket, SocketAddr};
 use rir::rtp::{RtpSession, RtpPkt, RtpHeader};
+use std::fs::File;
+use std::io::Write;
+use std::io::Read;
 use sdp;
 
 lazy_static! {
@@ -18,66 +22,55 @@ lazy_static! {
 
 pub struct Conference {
     pub id: String,
-    pub members: Mutex<HashMap<String, Arc<Mutex<Member>>>>,
-
+    pub members: Arc<Mutex<HashMap<String, Arc<Member>>>>,
     // SDP bound to the conference. The first member to arrive sets
     // sets the SDP which the other member will have to accept.
-    sdp: Mutex<Option<SessionDescription>>
+    sdp: Mutex<Option<SessionDescription>>,
 }
 
 impl Conference {
 
     pub fn new(id: &str) -> Arc<Conference> {
-        unsafe {
-            if convos_by_name.lock().unwrap().contains_key(id) {
-                return convos_by_name.lock().unwrap().get(id).unwrap().clone();
-            }
+        if convos_by_name.lock().unwrap().contains_key(id) {
+            return convos_by_name.lock().unwrap().get(id).unwrap().clone();
         }
 
         debug!("Creating a new convo [{}]", id);
 
         let convo = Conference {
             id: id.to_string(),
-            members: Mutex::new(HashMap::new()),
+            members: Arc::new(Mutex::new(HashMap::new())),
             sdp: Mutex::new(None),
         };
 
-        unsafe {
-            convos_by_name.lock().unwrap().insert(id.to_string(), Arc::new(convo));
-            return convos_by_name.lock().unwrap().get(id).unwrap().clone();
-        }
+        convos_by_name.lock().unwrap().insert(id.to_string(), Arc::new(convo));
+        return convos_by_name.lock().unwrap().get(id).unwrap().clone();
     }
 
     pub fn get(id: &str) -> Option<Arc<Conference>> {
-        unsafe {
-            if convos_by_name.lock().unwrap().contains_key(id) {
-                return Some(convos_by_name.lock().unwrap().get(id).unwrap().clone());
-            } else {
-                return None;
-            }
+        if convos_by_name.lock().unwrap().contains_key(id) {
+            return Some(convos_by_name.lock().unwrap().get(id).unwrap().clone());
+        } else {
+            return None;
         }
     }
 
-    /*fn change_ips(sdp: &mut SessionDescription, sock_addr: SocketAddr) {
-        let mut origin = sdp.origin.clone().unwrap();
-        origin.ip_address = sock_addr.ip();
-        sdp.origin = Some(origin);
+    pub fn init(&self) {
+        self.process_engine();
+    }
 
-        for i in 0..sdp.media.len() {
-            sdp.media[i].media.port = sock_addr.port();
-        }
-    }*/
-
-    pub fn add_member(&self, member: Arc<Mutex<Member>>) -> Option<SessionDescription> {
-
+    pub fn add_member(&self, member: Member) -> Option<SessionDescription> {
         let mut mutex = self.sdp.lock().unwrap();
+
+        member.init_session();
+
         let mut sdp_answer_to_ret;
         let var = match *mutex {
             // If there's still no SDP bound to this convo, this is
             // the one
             Some(ref convo) => { 
                 debug!("Negotiating SDP with the conference");
-                let mut sdp_answer = sdp::negotiate_with(Some(convo), &member.lock().unwrap().sdp);
+                let mut sdp_answer = sdp::negotiate_with(Some(convo), &member.sdp);
                 //member.lock().unwrap().init_audio();
 
                 //Conference::change_ips(&mut sdp_answer, member.write().unwrap().rtp_session.as_ref().unwrap().conn.local_addr().unwrap());
@@ -91,9 +84,10 @@ impl Conference {
                 //      needs to be negotiated with the platform
                 debug!("Negotiating SDP with the platform");
                 //let mut sdp_answer:SessionDescription = sdp::negotiate_with(None, &member.lock().unwrap().sdp);
-                let mut member_lock = member.lock().unwrap();
-                member_lock.negotiate_session(None);
-                let sdp_answer = member_lock.get_session_answer();
+                member.negotiate_session(None);
+                debug!("Negotiating SDP with the platform2");
+                let sdp_answer = member.get_session_answer();
+                debug!("Negotiating SDP with the platform3");
 
                 //member_lock.init_audio();
 //                let rtp_stream = RtpSession::connect_to(UdpSocket::bind("192.168.2.186:6000").unwrap(), "0.0.0.0:0".parse().unwrap());
@@ -110,12 +104,12 @@ impl Conference {
 
         *mutex = sdp_answer_to_ret;
 
-        self.members.lock().unwrap().insert(member.lock().unwrap().id.clone(), member.clone());
+        self.members.lock().unwrap().insert(member.id.clone(), Arc::new(member));
 
         var
     }
 
-    pub fn get_member(&self, id: &str) -> Option<Arc<Mutex<Member>>>  {
+    pub fn get_member(&self, id: &str) -> Option<Arc<Member>>  {
         if self.members.lock().unwrap().contains_key(id) {
             return Some(self.members.lock().unwrap().get(id).unwrap().clone());
         } else {
@@ -123,27 +117,50 @@ impl Conference {
         }
     }
 
-    pub fn process_engine(&self, member_local: Arc<Mutex<Member>>) {
-
+    fn process_engine(&self) {
         debug!("Processing engine...");
+        let members = self.members.clone();
+        //let mut file = File::open("/home/lam/Downloads/a2002011001-e02-16kHz.wav").unwrap();
+        let mut file = File::create("/tmp/a2002011001-e02-16kHz_dup.wav").unwrap();
+        let mut buffer: [u8; 640] = [0; 640];
+        thread::spawn(move || {
+            loop {
+                let members = members.lock().unwrap();
 
-        let mutex = member_local.lock().unwrap();
-        debug!("Reading audio...");
-        let mut rtp_pkt = mutex.read_audio();
+                for (_, member) in members.iter() {
+                    thread::sleep(time::Duration::from_millis(1));
+                    debug!("Reading from member buffer...");
 
-        debug!("Writing packet...");
+                    let payload = member.get_read_payload();
 
-        mutex.write_audio(&rtp_pkt);
-        /*
-        for member in self.members.lock().unwrap().values() /*i in 0..self.members.len()*/ {
-            let member_media = member.lock().unwrap().sdp.media[0].clone().media.port;
-            debug!("Writing packet... {}", member_media);
-            let member_local_media = member_local.lock().unwrap().sdp.media[0].clone().media.port;
-            debug!("Writing packet... {}", member_local_media);
-            if member_media != member_local_media {
-                member.lock().unwrap().write_audio(&rtp_pkt);
+                    if !payload.is_some() {
+                        continue
+                    }
+
+                    debug!("Writing audio packet...");
+
+                    let payload = payload.unwrap();
+
+                    member.set_write_payload(payload);
+                    /*let read = file.read(&mut buffer);
+                    match read {
+                        Ok(x) => {
+                            if x == 0 {
+                                continue;
+                            }
+
+                            member.set_write_payload(buffer);
+                        },
+                        Err(e) => {
+                            debug!("Error reading file... {}", e);
+                        },
+                    }*/
+
+                    debug!("After writing to file...");
+
+                    file.write(&payload);
+                }
             }
-        }
-        */
+        });
     }
 }

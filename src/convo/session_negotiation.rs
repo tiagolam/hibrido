@@ -1,10 +1,15 @@
+
 use std::collections::HashMap;
 use std::net::{UdpSocket, IpAddr, SocketAddr};
 use std::boxed::Box;
+use std::sync::{Arc, Mutex};
+use std::thread;
+use std::time;
 
-use rir::rtp::{RtpSession};
+use rir::rtp::{RtpSession, RirHandler};
 use rir::handlers::{CallbackType};
 use sdp::{SessionDescription, Attr, CandidateValue};
+use convo::member::{Member};
 use ice;
 use sdp;
 
@@ -17,31 +22,92 @@ pub struct Session {
     base_sdp: Option<SessionDescription>,
     pub answer_sdp: Option<SessionDescription>,
     state: SessionState,
-    ice: ice::Agent,
+    ice: Arc<Mutex<ice::Agent>>,
+    /* This is currently being used so that we can retrieve the stream_id
+     * just by the SDP's ordered 'm' lines. iT was a quick hack, there must
+     * be a better way.
+     */
     sdp_to_ice: Vec<String>,
-    media_sessions: HashMap<String, RtpSession>,
+    pub media_sessions: Arc<Mutex<HashMap<String, RtpSession>>>,
+    set_session: Option<Arc<Fn(&mut Member) + Send + Sync>>,
 }
 
-impl ice::Handler for Session {
-    fn handle_callback(&self) {
-        debug!("Received ICE callback!");
+struct SessionRtp {
+    stream_id: String,
+    component_id: u16,
+    ice: Arc<Mutex<ice::Agent>>,
+    local_candidate: ice::Candidate,
+}
+
+impl RirHandler for SessionRtp {
+    fn handle_event(&self, callback_type: CallbackType) {
+        debug!("Received callback {:?} with component_id {}!", callback_type, self.component_id);
+
+        match callback_type {
+            CallbackType::USE_CANDIDATE(addr) => {
+                self.ice.lock().unwrap().add_pair_candidate(&self.stream_id, &self.component_id, self.local_candidate.port, addr.port());
+                // TODO(tlam): Move this inside ice.rs, so this check happens automatically when a
+                // stream is completed
+                self.ice.lock().unwrap().set_ice_complete();
+            }
+        }
+    }
+}
+
+#[derive(Clone)]
+struct SessionIce {
+    media_sessions: Arc<Mutex<HashMap<String, RtpSession>>>,
+}
+
+// TODO(tlam): Get callbacks from ICE lib and eliminate / deallocate unused sessions.
+impl ice::Handler for SessionIce {
+    fn handle_callback(&mut self, stream_id: &str, peer: ice::Candidate) {
+        debug!("Received ICE callback for stream_id {} and media_sessions {}", stream_id, self.media_sessions.lock().unwrap().len());
+        let mut media_lock = self.media_sessions.lock().unwrap();
+        let media_session = media_lock.get_mut(stream_id);
+
+        match media_session {
+            Some(mut s) => {
+                debug!("Set member's media session for stream {}", stream_id);
+                if (peer.component_id.unwrap() == 1) {
+                    debug!("Set member's rtp peer to port {} for stream {}", peer.port, stream_id);
+                    s.change_transport(SocketAddr::new(peer.conn, peer.port));
+                }
+                if (peer.component_id.unwrap() == 2) {
+                    debug!("Set member's rtcp peer to port {} for stream {}", peer.port, stream_id);
+                    s.change_rtcp_transport(SocketAddr::new(peer.conn, peer.port));
+                }
+            },
+            None => {
+                info!("No media found for stream_id {}", stream_id);
+            },
+        }
     }
 }
 
 impl Session {
     // TODO(tlam): Do NOT assume ICE support
     pub fn new(offer_sdp: SessionDescription) -> Session {
-        let ice = ice::Agent::new();
 
-        Session {
+        let media_sessions = Arc::new(Mutex::new(HashMap::new()));
+
+        let sessionIce = SessionIce {
+            media_sessions: media_sessions.clone(),
+        };
+
+        let ice = ice::Agent::new(Box::new(sessionIce));
+        let session = Session {
             offer_sdp: offer_sdp,
             base_sdp: None,
             answer_sdp: None,
             state: SessionState::CheckingOffer,
-            ice: ice,
+            ice: Arc::new(Mutex::new(ice)),
             sdp_to_ice: Vec::new(),
-            media_sessions: HashMap::new(),
-        }
+            media_sessions: media_sessions,
+            set_session: None,
+        };
+
+        session
     }
 
     pub fn ice_support() -> bool {
@@ -49,20 +115,25 @@ impl Session {
         true
     }
 
+    pub fn init(&mut self, set_session: Arc<Fn(&mut Member) + Send + Sync>) {
+        self.set_session = Some(set_session)
+    }
+
     pub fn process_offer(&mut self) {
         // Create media stream and gather candidates for each stream
         for media in self.offer_sdp.media.iter() {
-            let stream_id = self.ice.add_stream();
+            let mut ice = self.ice.lock().unwrap();
+            let stream_id = ice.add_stream();
 
-            self.ice.gather_candidates(&stream_id, &ice::RTP_COMPONENT_ID);
-            //self.gather_candidates(stream_id, ice::RTCP_COMPONENT_ID);
+            ice.gather_candidates(&stream_id, &ice::RTP_COMPONENT_ID);
+            ice.gather_candidates(&stream_id, &ice::RTCP_COMPONENT_ID);
 
             self.sdp_to_ice.push(stream_id.clone());
 
             for attr in media.attrs.iter() {
                 match *attr {
                     Attr::Candidate(ref c) => {
-                        self.ice.add_offer_candidate(&stream_id, &ice::RTP_COMPONENT_ID, c.ice_candidate.clone());
+                        ice.add_offer_candidate(&stream_id, &c.ice_candidate.component_id.unwrap(), c.ice_candidate.clone());
                     },
                     _ => {},
                 }
@@ -80,8 +151,13 @@ impl Session {
         for media in self.answer_sdp.as_mut().unwrap().media.iter_mut() {
             let ref stream_id = self.sdp_to_ice[i];
 
-            let tmp_candidates = Vec::new();
-            let candidates = self.ice.get_stream_candidates(stream_id, &ice::RTP_COMPONENT_ID).unwrap_or(&tmp_candidates);
+            //let tmp_candidates = Vec::new();
+            let ice = self.ice.lock().unwrap();
+            let mut candidates = ice.get_stream_candidates(stream_id, &ice::RTP_COMPONENT_ID).unwrap().clone();/*_or(&mut tmp_candidates)*/;
+            let candidates_rtcp = ice.get_stream_candidates(stream_id, &ice::RTCP_COMPONENT_ID).unwrap();
+            for candidate_rtcp in candidates_rtcp.iter() {
+                candidates.push(candidate_rtcp.clone());
+            }
 
             for candidate in candidates.iter() {
                 debug!("Adding candidate {}:{}", candidate.conn.to_string(), candidate.port);
@@ -99,14 +175,19 @@ impl Session {
         for media in self.answer_sdp.as_ref().unwrap().media.iter() {
             let ref stream_id = self.sdp_to_ice[i];
 
-            let tmp_candidates = Vec::new();
-            let candidates = self.ice.get_stream_candidates(stream_id, &ice::RTP_COMPONENT_ID).unwrap_or(&tmp_candidates);
+            let ice = self.ice.lock().unwrap();
+            let mut rtp_candidates = ice.get_stream_candidates(stream_id, &ice::RTP_COMPONENT_ID).unwrap().clone();
+            let rtcp_candidates = ice.get_stream_candidates(stream_id, &ice::RTCP_COMPONENT_ID).unwrap();
+            if rtp_candidates.len() != rtcp_candidates.len() {
+                warn!("Different number of candidates for RTP and RTCP {}!={}", rtp_candidates.len(), rtcp_candidates.len());
+            }
 
-            for candidate in candidates.iter() {
-                // Start new media session on the candidate
-                debug!("Init candidate stream {}:{}", candidate.conn.to_string(), candidate.port);
-                let media_session = self.init_media_session(candidate.conn, candidate.port);
-                self.media_sessions.insert(stream_id.to_string(), media_session);
+            for it in rtp_candidates.iter().zip(rtcp_candidates.iter()) {
+                let (rtp_candidate, rtcp_candidate) = it;
+                // Start new media session on the candidates
+                debug!("Init candidate stream {}:{}", rtp_candidate.conn.to_string(), rtp_candidate.port);
+                let media_session = self.init_media_session(stream_id.to_string(), rtp_candidate, rtcp_candidate);
+                self.media_sessions.lock().unwrap().insert(stream_id.to_string(), media_session);
             }
 
             i += 1;
@@ -129,28 +210,42 @@ impl Session {
         self.answer_sdp = Some(sdp_answer);
     }
 
-    pub fn init_media_session(&self, conn: IpAddr, port: u16) -> RtpSession {
-        let bind_socket = SocketAddr::new(conn, port);
-        let conn = UdpSocket::bind(bind_socket);
+    pub fn init_media_session(&self, stream_id: String, rtp_candidate: &ice::Candidate, rtcp_candidate: &ice::Candidate) -> RtpSession {
 
-        let rtp_session = new_rtp_session(conn.unwrap(), self.offer_sdp.clone(), Box::new(use_candidate_callback));
+        let component_id = rtp_candidate.component_id.unwrap();
+        let rtp_handler = SessionRtp {
+            stream_id: stream_id.clone(),
+            component_id: component_id,
+            ice: self.ice.clone(),
+            local_candidate: rtp_candidate.clone(),
+        };
+        let rtp_cb: Box<RirHandler + Send> = Box::new(rtp_handler);
+        let rtp_conn = UdpSocket::bind(SocketAddr::new(rtp_candidate.conn, rtp_candidate.port));
+
+        let component_id = rtcp_candidate.component_id.unwrap();
+        let rtcp_handler = SessionRtp {
+            stream_id: stream_id.clone(),
+            component_id: component_id,
+            ice: self.ice.clone(),
+            local_candidate: rtcp_candidate.clone(),
+        };
+        let rtcp_cb: Box<RirHandler + Send> = Box::new(rtcp_handler);
+        let rtcp_conn = UdpSocket::bind(SocketAddr::new(rtcp_candidate.conn, rtcp_candidate.port));
+
+        let rtp_session = new_rtp_session(rtp_conn.unwrap(), rtcp_conn.unwrap(), self.offer_sdp.clone(), rtp_cb, rtcp_cb);
 
         rtp_session
     }
 }
 
-pub fn use_candidate_callback(callback_type: CallbackType) {
-    debug!("Received callback {:?}!", callback_type);
-}
+pub fn new_rtp_session(rtp_conn: UdpSocket, rtcp_conn: UdpSocket, sdp: SessionDescription, rtp_cb: Box<RirHandler + Send>, rtcp_cb: Box<RirHandler + Send>) -> RtpSession {
 
-pub fn new_rtp_session(conn: UdpSocket, sdp: SessionDescription, callback: Box<Fn(CallbackType) + Send>) -> RtpSession {
-
-    let ip_addr = sdp.origin.unwrap().ip_address;
+    let ip_addr = rtp_conn.local_addr().unwrap().ip();
     let port = sdp.media[0].media.port;
 
-    debug!("Connecting to endpoint {}:{}", ip_addr, port);
+    debug!("Connecting to remote endpoint {}:{}", ip_addr, port);
 
-    let rtp_stream = RtpSession::connect_to(conn, SocketAddr::new(ip_addr, port), callback);
+    let rtp_stream = RtpSession::connect_to(rtp_conn, rtcp_conn, SocketAddr::new(ip_addr, port), rtp_cb, rtcp_cb);
 
     rtp_stream
 }

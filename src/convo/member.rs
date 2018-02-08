@@ -1,4 +1,6 @@
 extern crate uuid;
+extern crate opus;
+extern crate byteorder;
 
 use lazy_static;
 use self::uuid::Uuid;
@@ -6,82 +8,284 @@ use std::collections::HashMap;
 use std::str::FromStr;
 use std::sync::{Arc, Mutex};
 use std::net::{UdpSocket, SocketAddr};
+use std::ops::DerefMut;
+use std::{thread, time};
+use self::opus::{Decoder, Encoder, Application, Channels};
+use self::byteorder::{ByteOrder, BigEndian, LittleEndian, ReadBytesExt, WriteBytesExt};
 
 use sdp::{SessionDescription};
 use rir::rtp::{RtpSession, RtpPkt, RtpHeader};
 use convo::session_negotiation::{Session};
 
-// TODO(tlam): There's possible high contention here, as all member creations
-// pass through here
 lazy_static! {
-    static ref members_by_id: Mutex<HashMap<String, Arc<Mutex<Member>>>> = {
-        let mut m = HashMap::new();
-        Mutex::new(m)
-    };
+    // Since it's mutable and shared, use mutext.
+    static ref packet: Mutex<Option<RtpPkt>> = Mutex::new(None);
+    static ref counter: Mutex<u16> = Mutex::new(0);
+    static ref ts: Mutex<u32> = Mutex::new(0);
+}
+
+struct MemberSession {
+    session: Mutex<Session>,
+    encoder: Mutex<opus::Encoder>,
+    decoder: Mutex<opus::Decoder>,
+    r_payload: Mutex<Vec<u8>>,
+    w_payload: Mutex<Vec<u8>>,
 }
 
 pub struct Member {
     pub id: String,
     pub sdp: SessionDescription,
-    pub rtp_session: Option<RtpSession>,
-    pub session: Session,
+    member_session: Arc<MemberSession>,
 }
 
 impl Member {
-
-    pub fn new(sdp: SessionDescription) -> Arc<Mutex<Member>> {
+    pub fn new(sdp: SessionDescription) -> Member {
         let member_id: &str = &Uuid::new_v4().to_string();
 
         debug!("Creating a new member [{}]", member_id);
 
         let mut session = Session::new(sdp.clone());
 
-        // TODO(tlam): Remove logic from init function
-        session.process_offer();
-
         let member = Member {
             id: member_id.to_string(),
             sdp: sdp,
-            rtp_session: None,
-            session: session,
+            member_session: Arc::new(MemberSession {
+                session: Mutex::new(session),
+                decoder: Mutex::new(Decoder::new(48000, Channels::Stereo).unwrap()),
+                encoder: Mutex::new(Encoder::new(48000, Channels::Stereo, Application::Audio).unwrap()),
+                r_payload: Mutex::new(Vec::new()),
+                w_payload: Mutex::new(Vec::new()),
+            }),
         };
 
-        unsafe {
-            members_by_id.lock().unwrap().insert(member_id.to_string(), Arc::new(Mutex::new(member)));
-            return members_by_id.lock().unwrap().get(member_id).unwrap().clone();
-        }
+        member
     }
 
-    pub fn get(id: &str) -> Option<Arc<Mutex<Member>>> {
-        unsafe {
-            if members_by_id.lock().unwrap().contains_key(id) {
-                return Some(members_by_id.lock().unwrap().get(id).unwrap().clone());
-            } else {
-                return None;
-            }
+    pub fn get_read_payload(&self) -> Option<[u8; 3840]> {
+        let member_session = self.member_session.clone();
+
+        let mut x: [u8; 3840] = [0; 3840];
+
+        debug!("Acquiring lock...");
+        let mut payload = member_session.r_payload.lock().unwrap();
+        debug!("Acquiring lock2...");
+        if (*payload).len() < 3840 {
+            return None
         }
+
+        let first = (*payload).split_off(3840);
+        debug!("Acquiring lock3...");
+        x.clone_from_slice(&(*payload));
+        *payload = first;
+        debug!("Acquiring lock4...");
+
+        Some(x)
     }
 
-    pub fn negotiate_session(&mut self, base_sdp: Option<SessionDescription>) {
+    pub fn set_write_payload(&self, payload: [u8; 3840]) {
+        let member_session = self.member_session.clone();
+
+        let mut w_payload = member_session.w_payload.lock().unwrap();
+        (*w_payload).extend_from_slice(&payload);
+        debug!("Set write...");
+    }
+
+    pub fn init_session(&self) {
+        //self.session.init(Box::new(self.set_default_session));
+
+        // TODO(tlam): Remove logic from init function
+        self.member_session.session.lock().unwrap().process_offer();
+
+        self.read_worker();
+        self.write_worker();
+    }
+
+    fn set_default_session(&mut self) {
+    }
+
+    pub fn negotiate_session(&self, base_sdp: Option<SessionDescription>) {
+        let mut session_lock = self.member_session.session.lock().unwrap();
+        debug!("Negotiating SDP with the platform");
+
         // Pass base SDP and negotiate with session's offer
-        let sdp_answer = self.session.negotiate_with_base_sdp(base_sdp);
+        let sdp_answer = session_lock.negotiate_with_base_sdp(base_sdp);
 
         // Now that we have the answer we can process it
-        self.session.process_answer();
+        session_lock.process_answer();
 
         sdp_answer
     }
 
     pub fn get_session_answer(&self) -> SessionDescription {
-        self.session.answer_sdp.clone().unwrap()
+        self.member_session.session.lock().unwrap().answer_sdp.clone().unwrap()
     }
 
-    pub fn write_audio(&self, rtp_pkt: &RtpPkt) {
-        debug!("Writing packet to port {}", self.sdp.media[0].clone().media.port);
-        self.rtp_session.as_ref().unwrap().write(rtp_pkt);
+    fn write_worker(&self) {
+        debug!("Write worker...{}", self.id);
+
+        let member_session = self.member_session.clone();
+
+        thread::spawn(move || {
+            loop {
+                // TODO(tlam): Write audio passed into the buffer into session
+                thread::sleep(time::Duration::from_millis(10));
+
+                let mut payload = member_session.w_payload.lock().unwrap();
+                if (*payload).len() < 3840 {
+                    continue;
+                }
+
+                //debug!("Write worker payload...{:?}", (*payload));
+
+                let mut slice = [0; 3840];
+                let first = (*payload).split_off(3840);
+                slice.clone_from_slice(&(*payload));
+                *payload = first;
+                member_session.encode_and_write(slice);
+            }
+        });
     }
 
-    pub fn read_audio(&self) -> RtpPkt {
+    fn read_worker(&self) {
+        debug!("Audio worker...{}", self.id);
+
+        let member_session = self.member_session.clone();
+        let mut count = 0;
+        thread::spawn(move || {
+            loop {
+                // TODO(tlam): Read audio in session into the buffer
+                if count < 100 {
+                    thread::sleep(time::Duration::from_millis(5));
+                    count += 1;
+                    debug!("Audio worker waiting...");
+                }
+
+                debug!("Audio worker...1");
+                let some_payload = member_session.read_and_decode();
+
+                debug!("Audio worker...2");
+
+                let mut payload = member_session.r_payload.lock().unwrap();
+                debug!("Audio worker...3");
+                if (some_payload.is_some()) {
+                    (*payload).extend_from_slice(&some_payload.unwrap());
+                    //debug!("Audio worker payload... {:?}", (*payload));
+                }
+            }
+        });
+    }
+}
+
+fn convert_u8_to_i16(orig: &mut [u8], dest: &mut [i16]) {
+
+    for i in 0..dest.len() {
+        dest[i] = LittleEndian::read_i16(&[orig[i*2], orig[(i*2)+1]]);
+    }
+}
+
+fn convert_i16_to_u8(orig: &mut [i16], dest: &mut [u8]) {
+    for i in 0..orig.len() {
+        //dest[i] = orig[i*2] as u16;
+        //dest[i] = dest[i] << 8;
+
+        dest[i*2] = (orig[i] & 0xFF) as u8;
+        dest[i*2 + 1] = ((orig[i] >> 8) & 0xFF) as u8;
+        //dest[i] = dest[i] | (orig[i*2 +1] as u8);
+    }
+}
+
+impl MemberSession {
+    fn read_and_decode(&self) -> Option<[u8; 3840]> {
+        let mut buffer: [u8; 3840] = [0; 3840];
+
+        let mut rtp_pkt = self.read_audio();
+        let mut tmp_buffer: Vec<i16> = vec![0; 1920];
+
+        debug!("Read from ssrc {} csrc {:?} seq {} ts {}...", rtp_pkt.header.ssrc, rtp_pkt.header.csrc, rtp_pkt.header.seq_number, rtp_pkt.header.timestamp);
+
+        if rtp_pkt.payload.len() == 0 {
+            return None
+        }
+
+        debug!("Before decoding1...");
+        let mut decode_lock = self.decoder.lock().unwrap();
+
+        debug!("Before decoding2... {}", rtp_pkt.payload.len());
+        let size = decode_lock.decode(&rtp_pkt.payload, &mut tmp_buffer, false).unwrap();
+        debug!("After decoding... {}", size);
+        debug!("After decoding2... {}", tmp_buffer.len());
+
+        convert_i16_to_u8(&mut tmp_buffer, &mut buffer);
+
+        let mut packet_lock = packet.lock().unwrap();
+        if !packet_lock.is_some() {
+            *packet_lock = Some(rtp_pkt);
+        }
+
+        return Some(buffer)
+    }
+
+    fn encode_and_write(&self, raw_payload: [u8; 3840]) {
+        let mut rtp_pkt;
+        let packet_lock = packet.lock().unwrap();
+        if packet_lock.is_some() {
+            rtp_pkt = RtpPkt {
+                header: RtpHeader {
+                    version: 2,
+                    padding: 0,
+                    ext: 0,
+                    cc: 0,
+                    marker: 0,
+                    payload_type: packet_lock.as_ref().unwrap().header.payload_type,
+                    seq_number: packet_lock.as_ref().unwrap().header.seq_number + *(counter.lock().unwrap()),
+                    timestamp: packet_lock.as_ref().unwrap().header.timestamp + *(ts.lock().unwrap()),
+                    ssrc: packet_lock.as_ref().unwrap().header.ssrc,
+                    csrc: packet_lock.as_ref().unwrap().header.csrc.clone(),
+                },
+                payload: vec![],
+            };
+            debug!("Writing ssrc {} csrc {:?} seq {} ts {}...", rtp_pkt.header.ssrc, rtp_pkt.header.csrc, rtp_pkt.header.seq_number, rtp_pkt.header.timestamp);
+            *(ts.lock().unwrap()) += 960;
+            *(counter.lock().unwrap()) += 1;
+         } else {
+            return;
+        }
+
+        let mut buffer = raw_payload;
+        debug!("Buffer size {}", buffer.len());
+        let mut tmp_buffer: Vec<i16> = vec![0; 1920];
+        let mut encoded: [u8; 1920] = [0; 1920];
+
+        convert_u8_to_i16(&mut buffer, &mut tmp_buffer);
+
+        debug!("Before encoding1... {}", tmp_buffer.len());
+        let mut encode_lock = self.encoder.lock().unwrap();
+
+        let size = encode_lock.encode(&tmp_buffer, &mut encoded).unwrap();
+
+        debug!("After encoding1... {}", encoded.len());
+
+        rtp_pkt.payload = vec![0; size];
+        rtp_pkt.payload.clone_from_slice(&encoded[..size]);
+
+        debug!("Writing packet with payload of size {}", rtp_pkt.payload.len());
+
+        self.write_audio(&rtp_pkt);
+    }
+
+    fn write_audio(&self, rtp_pkt: &RtpPkt) {
+        let session_lock = self.session.lock().unwrap();
+
+        let sessions_map = session_lock.media_sessions.lock().unwrap();
+        // TODO(tlam): Need to fix when we allocate more than 1 candidate, since this loop won't
+        // work
+        for (k, rtp_session) in sessions_map.iter() {
+            //debug!("Writing packet to port {} {}", self.sdp.media[0].clone().media.port, k);
+            rtp_session.write(rtp_pkt);
+        }
+    }
+
+    fn read_audio(&self) -> RtpPkt {
         let mut rtp_pkt = RtpPkt {
             header: RtpHeader {
                 version: 0,
@@ -98,7 +302,14 @@ impl Member {
             payload: vec![],
         };
 
-        self.rtp_session.as_ref().unwrap().read(&mut rtp_pkt);
+        let session_lock = self.session.lock().unwrap();
+
+        let sessions_map = session_lock.media_sessions.lock().unwrap();
+
+        for (k, rtp_session) in sessions_map.iter() {
+            //debug!("Reading packet from port {} {}", self.sdp.media[0].clone().media.port, k);
+            rtp_session.read(&mut rtp_pkt);
+        }
 
         rtp_pkt
     }

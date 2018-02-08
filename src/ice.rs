@@ -175,32 +175,31 @@ fn get_ipv4_address() -> Option<SocketAddr> {
 }
 
 pub trait Handler {
-    fn handle_callback(&self);
+    fn handle_callback(&mut self, &str, Candidate);
 }
 
 impl Agent {
-    pub fn new() -> Agent {
+    pub fn new(handler: Box<Handler + Send>) -> Agent {
         Agent {
             state: IceState::Running,
             streams: HashMap::new(),
             // TODO(tlam): Miss the Option wrapper so we can use this without
             // having to place checks all around the callbacks code
-            handler: None,
+            handler: Some(handler),
         }
     }
 
     /// Start agent and initiate the regular functions
-    pub fn start(&mut self, handler: Box<Handler + Send>) {
+    pub fn start(&mut self, mut handler: Box<Handler + Send>) {
         let (tx, rx) = mpsc::channel();
         let timer = Timer::new();
 
         self.handler = Some(handler);
 
-        loop {
-            let sync_tx = tx.clone();
-            timer.schedule_with_delay(Duration::milliseconds(1000 as i64),
+//        loop {
+            timer.schedule_with_delay(Duration::milliseconds(10),
                 move || {
-                    sync_tx.send(1).unwrap();
+                    tx.send(1);
                 }
             );
 
@@ -216,7 +215,17 @@ impl Agent {
             if !found {
                 self.state = IceState::Completed;
             }
+//        }
+    }
+
+    pub fn set_ice_complete(&mut self) {
+        for (_, stream) in self.streams.iter() {
+            if stream.state != StreamState::Completed {
+                return;
+            }
         }
+
+        self.state = IceState::Completed;
     }
 
     /// Add new stream to the current agent, of the component provided
@@ -272,7 +281,7 @@ impl Agent {
             ipv4_addr.set_port(START_PORT);
             START_PORT += 1;
         }
-        let conn = UdpSocket::bind(ipv4_addr).unwrap();
+        //let conn = UdpSocket::bind(ipv4_addr).unwrap();
 
         let port = ipv4_addr.port();
 
@@ -296,6 +305,66 @@ impl Agent {
         Agent::set_priority_candidate(&mut candidate, *component_id);
 
         candidates.push(candidate);
+    }
+
+    pub fn add_pair_candidate(&mut self, stream_id: &str, component_id: &u16, local_port: u16, remote_port: u16) {
+        let mut stream = match self.streams.get_mut(stream_id) {
+            Some(stream) => { stream },
+            None => { return },
+        };
+
+        info!("New offered candidate for stream_id {}", stream_id);
+
+        if stream.state == StreamState::Completed {
+            debug!("Stream_id {} is complete", stream_id);
+            return;
+        }
+
+        {
+            /* Find remote_port amongst the offer candidates */
+            let offer_candidates: &mut Vec<Candidate> = stream.offer_candidates.entry(*component_id).or_insert(Vec::new());
+            let mut peer_candidate: Option<Candidate> = None;
+            for candidate in offer_candidates.iter() {
+                if candidate.port == remote_port {
+                    peer_candidate = Some(candidate.clone());
+                    break;
+                }
+            }
+
+            /* Find local_port amongst the local candidates */
+            let local_candidates: &mut Vec<Candidate> = stream.local_candidates.entry(*component_id).or_insert(Vec::new());
+            let mut local_candidate: Option<Candidate> = None;
+            for candidate in local_candidates.iter() {
+                if candidate.port == local_port {
+                    local_candidate = Some(candidate.clone());
+                    break;
+                }
+            }
+
+            if (peer_candidate.is_none() || local_candidate.is_none()) {
+                debug!("No pair inserted for local port {} and remote_port {}!", local_port, remote_port);
+                return;
+            }
+
+            let pairs: &mut Vec<PairCandidate> = stream.valid_list.entry(*component_id).or_insert(Vec::new());
+            pairs.push(PairCandidate {
+                local_candidate: local_candidate.unwrap(),
+                peer_candidate: peer_candidate.unwrap(),
+            });
+        }
+
+        /* Check if stream has a pair for all components, in which case it is considered completed */
+        if is_stream_complete(stream, &[RTP_COMPONENT_ID, RTCP_COMPONENT_ID]) {
+            stream.state = StreamState::Completed;
+            /* Choose which candidate pair to use and send it */
+            /* XXX(tlam): As of now we're only sending the first */
+            for (_, valid_list) in stream.valid_list.iter() {
+                for v in valid_list.iter() {
+                    self.handler.as_mut().unwrap().handle_callback(stream_id, v.peer_candidate.clone());
+                    break;
+                }
+            }
+        }
     }
 
     fn pair_candidates(&mut self, stream_id: &str, component_id: &u16) {
@@ -326,8 +395,8 @@ impl Agent {
         if trigger_state_change(stream, component_id) {
             // If there was a state change, trigger callback
             match self.handler {
-                Some(ref h) => {
-                    h.handle_callback();
+                Some(ref mut h) => {
+                    //h.handle_callback(stream_id);
                 },
                 None => {
                     info!("Undelivered event. No callback set!");
@@ -345,13 +414,24 @@ impl Agent {
     }
 
     fn set_default_candidate(candidates: Vec<Candidate>) {
-        // TODO(tlam): The default candidate should be firs ton que queue,
+        // TODO(tlam): The default candidate should be first on que queue,
         //              however there's no process in place right now.
     }
 }
 
+fn is_stream_complete(stream: &Stream, components: &[u16]) -> bool {
+    for i in components.iter() {
+        let valid_list = stream.valid_list.get(i);
+        if valid_list.unwrap_or(&vec![]).len() < 1 {
+            return false;
+        }
+    }
+
+    return true;
+}
+
 fn trigger_state_change(stream: &mut Stream, component_id: &u16) -> bool {
-    // Check if valid list as pairs por all components
+    // Check if valid list has pairs for all components
     // TODO(tlam): What if there is more than one candidate per component?
     // (which can happen in dual IPv4 and IPv6 stacks)
     if stream.local_candidates.len() == stream.valid_list.len() {
