@@ -107,47 +107,49 @@ impl Conference {
     fn process_engine(&self) {
         debug!("Processing engine...");
         let members = self.members.clone();
-        //let mut file = File::open("/home/lam/Downloads/a2002011001-e02-16kHz.wav").unwrap();
-        let mut file = File::create("/tmp/a2002011001-e02-16kHz_dup.wav").unwrap();
-        let mut buffer: [u8; 640] = [0; 640];
+        let mut buffer: [u8; 3840] = [0; 3840];
         thread::spawn(move || {
             loop {
+                thread::sleep(time::Duration::from_millis(1));
                 let members = members.lock().unwrap();
 
+                /* Read from members */
                 for (_, member) in members.iter() {
-                    thread::sleep(time::Duration::from_millis(1));
-                    debug!("Reading from member buffer...");
+                    //debug!("Reading from member buffer...");
+                    let mut tmp_payload: [u8; 3840] = [0; 3840];
+                    let mut write = false;
+                    for (_, member_r) in members.iter() {
+                        if (member.id != member_r.id) {
+                            debug!("Reading from member {}...", member_r.id);
 
-                    let payload = member.get_read_payload();
-
-                    if !payload.is_some() {
-                        continue
-                    }
-
-                    debug!("Writing audio packet...");
-
-                    let payload = payload.unwrap();
-
-                    member.set_write_payload(payload);
-                    /*let read = file.read(&mut buffer);
-                    match read {
-                        Ok(x) => {
-                            if x == 0 {
-                                continue;
+                            let payload = member.get_read_payload();
+                            if !payload.is_some() {
+                                continue
                             }
 
-                            member.set_write_payload(buffer);
-                        },
-                        Err(e) => {
-                            debug!("Error reading file... {}", e);
-                        },
-                    }*/
+                            write = true;
+                            tmp_payload  = sum_payload(tmp_payload, payload.unwrap());
+                        }
+                    }
 
-                    debug!("After writing to file...");
+                    if write {
+                        debug!("Writing audio packet to member {}...", member.id);
 
-                    file.write(&payload);
+                        member.set_write_payload(tmp_payload);
+                    }
                 }
+
             }
         });
     }
+}
+
+fn sum_payload(payload1: [u8; 3840], payload2: [u8; 3840]) -> [u8; 3840] {
+    let mut result: [u8; 3840] = [0; 3840];
+
+    for i in 0..payload1.len() {
+        result[i] = payload1[i] + payload2[i];
+    }
+
+    result
 }
