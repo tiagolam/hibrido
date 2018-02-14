@@ -66,18 +66,19 @@ impl Member {
 
         let mut x: [u8; 3840] = [0; 3840];
 
-        debug!("Acquiring lock...");
         let mut payload = member_session.r_payload.lock().unwrap();
-        debug!("Acquiring lock2...");
         if (*payload).len() < 3840 {
             return None
         }
 
         let first = (*payload).split_off(3840);
-        debug!("Acquiring lock3...");
         x.clone_from_slice(&(*payload));
-        *payload = first;
-        debug!("Acquiring lock4...");
+        /*  Start dropping data after 1 sec */
+        if (first.len() >= 192000) {
+            *payload = Vec::new();
+        } else {
+            *payload = first;
+        }
 
         Some(x)
     }
