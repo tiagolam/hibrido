@@ -79,7 +79,6 @@ impl tcp {
 
         // Create new convo or return an alrady existing one
         let convo = Conference::new(convo_id);
-        convo.init();
         
 /*        let local_addr =  FromStr::from_str("127.0.0.1").unwrap();
         let bind_socket = SocketAddr::new(local_addr, 0);

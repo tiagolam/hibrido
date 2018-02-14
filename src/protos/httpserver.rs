@@ -111,7 +111,6 @@ fn post_member<'mw>(req: &mut Request, mut res: Response<'mw>) -> MiddlewareResu
         }
         convo = convo_result.unwrap();
     }
-    convo.init();
 
     // Parse JSON
     let member_post = req.json_as::<MemberPost>().unwrap();

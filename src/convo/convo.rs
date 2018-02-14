@@ -55,10 +55,6 @@ impl Conference {
         }
     }
 
-    pub fn init(&self) {
-        self.process_engine();
-    }
-
     pub fn add_member(&self, member: Member) -> Option<SessionDescription> {
         let mut mutex = self.sdp.lock().unwrap();
 
@@ -96,7 +92,8 @@ impl Conference {
 
                 sdp_answer_to_ret = Some(sdp_answer.clone());
 
-                /**mutex = */Some(sdp_answer.clone())
+                /* Start engine, this is the first bound SDP */
+                self.process_engine();
 
                 //self.sdp.lock().unwrap().clone()
             },
