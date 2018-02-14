@@ -216,7 +216,13 @@ impl Handlers for HttpServer {
 
         server.utilize(enable_cors);
 
-        server.listen("127.0.0.1:3080");
+        match server.listen("127.0.0.1:3080") {
+            Err(x) => {
+                error!("Failed to start HTTP server {}", x);
+                return;
+            },
+            _ => {}
+        }
     }
 }
 

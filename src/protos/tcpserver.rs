@@ -94,7 +94,12 @@ impl Tcp {
             // failed. 
 
             debug!("SDP Answer {}", sdp_answer.clone().unwrap().to_string());
-            stream.write(sdp_answer.clone().unwrap().to_string().as_bytes());
+            match stream.write(sdp_answer.clone().unwrap().to_string().as_bytes()) {
+                Err(x) => {
+                    error!("Problem occurred writing answer {}", x);
+                },
+                _ => {}
+            }
         }
     }
 }

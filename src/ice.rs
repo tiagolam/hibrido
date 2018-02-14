@@ -179,11 +179,24 @@ impl Agent {
 //        loop {
             timer.schedule_with_delay(Duration::milliseconds(10),
                 move || {
-                    tx.send(1);
+                    let err = tx.send(1);
+                    match err {
+                        Err(x) => {
+                            error!("Problem scheduling timer: {}", x);
+                        },
+                        _ => {},
+                    }
                 }
             );
 
-            rx.recv();
+            let err = rx.recv();
+            match err {
+                Err(x) => {
+                    error!("Problem scheduling timer: {}", x);
+                    return;
+                },
+                _ => {},
+            }
 
             let mut found = false;
             for (_, stream) in self.streams.iter() {
@@ -191,10 +204,10 @@ impl Agent {
                     found = true;
                 }
             }
-
             if !found {
                 self.state = IceState::Completed;
             }
+
 //        }
     }
 
