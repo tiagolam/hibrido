@@ -1021,6 +1021,10 @@ fn negotiate_media_stream(orig_media: MediaDescription, offer_media: &mut MediaD
 
                     filtered_attrs.push(orig_attr);
                 },
+                Attr::Candidate(ref x) => {
+                    continue;
+                },
+
                 _ => {},
             }
         }
@@ -1040,6 +1044,7 @@ fn negotiate_media_stream(orig_media: MediaDescription, offer_media: &mut MediaD
     offer_media.attrs = result;
     // For each of the attributes present on the offer, negotiate, and put the
     // result on the answer
+
     for offer_attr in &mut offer_media_attrs {
         match *offer_attr {
             Attr::SendOnly => {
@@ -1066,7 +1071,7 @@ fn negotiate_media_stream(orig_media: MediaDescription, offer_media: &mut MediaD
                 offer_media.attrs.push(Attr::IcePwd(IcePwdValue {
                     value: "T0teqPLNQQOf+5W+ls+P2p16".to_string()
                 }));
-            }
+            },
             _ => {},
         }
     }
@@ -1131,6 +1136,7 @@ pub fn negotiate_with(sdp_orig: Option<&SessionDescription>, sdp_offer: &Session
     if sdp_orig.is_some() {
         let mut sdp_answer = sdp_offer.clone();
 
+        debug!("Here1");
         for answer_media in &mut sdp_answer.media {
             let mut found_match = false;
             for orig_media in sdp_orig.unwrap().media.iter() {
@@ -1141,26 +1147,37 @@ pub fn negotiate_with(sdp_orig: Option<&SessionDescription>, sdp_offer: &Session
             }
 
             if !found_match {
-                answer_media.media.port = 0;
+                answer_media.media.port = 9;
             }
         }
 
         // Add "ice-lite" attribute
         sdp_answer.attrs.push(Attr::IceLite);
 
-        // TODO(tlam): Hack that only gets the candidate of the first m=
-        for answer_attr in &mut sdp_answer.media[0].attrs {
-            match *answer_attr {
+        debug!("Here2");
+        let mut filtered_attrs = vec![];
+        for answer_attr in sdp_answer.media[0].attrs.drain(0..) {
+            match answer_attr {
                 Attr::Candidate(ref x) => {
-                    // Set connection
-                    let conn = sdp_answer.conn.as_mut().unwrap();
-                    conn.ip_address = x.ice_candidate.conn;
-
-                    break;
+                    continue;
                 },
-                _ => {},
+                Attr::IceUfrag(ref x) => {
+                    // Generate ufrag and pass
+                    filtered_attrs.push(Attr::IceUfrag(IceUfragValue {
+                        value: "Oyef7uvBlwafI3hT".to_string()
+                    }));
+                },
+                Attr::IcePwd(ref x) => {
+                    filtered_attrs.push(Attr::IcePwd(IcePwdValue {
+                        value: "T0teqPLNQQOf+5W+ls+P2p16".to_string()
+                    }));
+                },
+                _ => {
+                    filtered_attrs.push(answer_attr);
+                },
             }
         }
+        sdp_answer.media[0].attrs = filtered_attrs;
 
         return sdp_answer
     } else {

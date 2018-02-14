@@ -87,7 +87,6 @@ impl Member {
 
         let mut w_payload = member_session.w_payload.lock().unwrap();
         (*w_payload).extend_from_slice(&payload);
-        debug!("Set write...");
     }
 
     pub fn init_session(&self) {
@@ -105,8 +104,6 @@ impl Member {
 
     pub fn negotiate_session(&self, base_sdp: Option<SessionDescription>) {
         let mut session_lock = self.member_session.session.lock().unwrap();
-        debug!("Negotiating SDP with the platform");
-
         // Pass base SDP and negotiate with session's offer
         let sdp_answer = session_lock.negotiate_with_base_sdp(base_sdp);
 

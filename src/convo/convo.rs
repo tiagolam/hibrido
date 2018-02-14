@@ -66,36 +66,26 @@ impl Conference {
             // the one
             Some(ref convo) => { 
                 debug!("Negotiating SDP with the conference");
-                let mut sdp_answer = sdp::negotiate_with(Some(convo), &member.sdp);
-                //member.lock().unwrap().init_audio();
+                member.negotiate_session(Some(convo.clone()));
+                let sdp_answer = member.get_session_answer();
 
-                //Conference::change_ips(&mut sdp_answer, member.write().unwrap().rtp_session.as_ref().unwrap().conn.local_addr().unwrap());
+                sdp_answer_to_ret = Some(sdp_answer.clone());
 
-                sdp_answer_to_ret = None;
-
-                Some(sdp_answer)
+                Some(sdp_answer.clone())
             },
             None => {
                 // TODO Even though this is the first SDP, it still
                 //      needs to be negotiated with the platform
                 debug!("Negotiating SDP with the platform");
-                //let mut sdp_answer:SessionDescription = sdp::negotiate_with(None, &member.lock().unwrap().sdp);
                 member.negotiate_session(None);
-                debug!("Negotiating SDP with the platform2");
                 let sdp_answer = member.get_session_answer();
-                debug!("Negotiating SDP with the platform3");
-
-                //member_lock.init_audio();
-//                let rtp_stream = RtpSession::connect_to(UdpSocket::bind("192.168.2.186:6000").unwrap(), "0.0.0.0:0".parse().unwrap());
-
-                //Conference::change_ips(&mut sdp_answer, member.read().unwrap().rtp_session.as_ref().unwrap().conn.local_addr().unwrap());
 
                 sdp_answer_to_ret = Some(sdp_answer.clone());
 
                 /* Start engine, this is the first bound SDP */
                 self.process_engine();
 
-                //self.sdp.lock().unwrap().clone()
+                Some(sdp_answer.clone())
             },
         };
 
