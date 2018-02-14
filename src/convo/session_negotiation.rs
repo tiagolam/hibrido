@@ -1,10 +1,7 @@
-
 use std::collections::HashMap;
-use std::net::{UdpSocket, IpAddr, SocketAddr};
+use std::net::{UdpSocket, SocketAddr};
 use std::boxed::Box;
 use std::sync::{Arc, Mutex};
-use std::thread;
-use std::time;
 
 use rir::rtp::{RtpSession, RirHandler};
 use rir::handlers::{CallbackType};
@@ -67,13 +64,13 @@ impl ice::Handler for SessionIce {
         let media_session = media_lock.get_mut(stream_id);
 
         match media_session {
-            Some(mut s) => {
+            Some(s) => {
                 debug!("Set member's media session for stream {}", stream_id);
-                if (peer.component_id.unwrap() == 1) {
+                if peer.component_id.unwrap() == 1 {
                     debug!("Set member's rtp peer to port {} for stream {}", peer.port, stream_id);
                     s.change_transport(SocketAddr::new(peer.conn, peer.port));
                 }
-                if (peer.component_id.unwrap() == 2) {
+                if peer.component_id.unwrap() == 2 {
                     debug!("Set member's rtcp peer to port {} for stream {}", peer.port, stream_id);
                     s.change_rtcp_transport(SocketAddr::new(peer.conn, peer.port));
                 }
@@ -91,11 +88,11 @@ impl Session {
 
         let media_sessions = Arc::new(Mutex::new(HashMap::new()));
 
-        let sessionIce = SessionIce {
+        let session_ice = SessionIce {
             media_sessions: media_sessions.clone(),
         };
 
-        let ice = ice::Agent::new(Box::new(sessionIce));
+        let ice = ice::Agent::new(Box::new(session_ice));
         let session = Session {
             offer_sdp: offer_sdp,
             base_sdp: None,
@@ -172,7 +169,7 @@ impl Session {
 
         i = 0;
         // Start new media session on the candidate
-        for media in self.answer_sdp.as_ref().unwrap().media.iter() {
+        for _ in self.answer_sdp.as_ref().unwrap().media.iter() {
             let ref stream_id = self.sdp_to_ice[i];
 
             let ice = self.ice.lock().unwrap();
@@ -206,7 +203,7 @@ impl Session {
 
         self.base_sdp = base_sdp;
 
-        let mut sdp_answer = sdp::negotiate_with(self.base_sdp.as_ref(), &self.offer_sdp);
+        let sdp_answer = sdp::negotiate_with(self.base_sdp.as_ref(), &self.offer_sdp);
         self.answer_sdp = Some(sdp_answer);
     }
 

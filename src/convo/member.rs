@@ -2,26 +2,21 @@ extern crate uuid;
 extern crate opus;
 extern crate byteorder;
 
-use lazy_static;
 use self::uuid::Uuid;
-use std::collections::HashMap;
-use std::str::FromStr;
 use std::sync::{Arc, Mutex};
-use std::net::{UdpSocket, SocketAddr};
-use std::ops::DerefMut;
 use std::{thread, time};
 use self::opus::{Decoder, Encoder, Application, Channels};
-use self::byteorder::{ByteOrder, BigEndian, LittleEndian, ReadBytesExt, WriteBytesExt};
+use self::byteorder::{ByteOrder, LittleEndian};
 
 use sdp::{SessionDescription};
-use rir::rtp::{RtpSession, RtpPkt, RtpHeader};
+use rir::rtp::{RtpPkt, RtpHeader};
 use convo::session_negotiation::{Session};
 
 lazy_static! {
     // Since it's mutable and shared, use mutext.
-    static ref packet: Mutex<Option<RtpPkt>> = Mutex::new(None);
-    static ref counter: Mutex<u16> = Mutex::new(0);
-    static ref ts: Mutex<u32> = Mutex::new(0);
+    static ref PACKET: Mutex<Option<RtpPkt>> = Mutex::new(None);
+    static ref COUNTER: Mutex<u16> = Mutex::new(0);
+    static ref TS: Mutex<u32> = Mutex::new(0);
 }
 
 struct MemberSession {
@@ -44,7 +39,7 @@ impl Member {
 
         debug!("Creating a new member [{}]", member_id);
 
-        let mut session = Session::new(sdp.clone());
+        let session = Session::new(sdp.clone());
 
         let member = Member {
             id: member_id.to_string(),
@@ -67,14 +62,14 @@ impl Member {
         let mut x: [u8; 3840] = [0; 3840];
 
         let mut payload = member_session.r_payload.lock().unwrap();
-        if (*payload).len() < 3840 {
+        if payload.len() < 3840 {
             return None
         }
 
         let first = (*payload).split_off(3840);
         x.clone_from_slice(&(*payload));
         /*  Start dropping data after 1 sec */
-        if (first.len() >= 192000) {
+        if first.len() >= 192000 {
             *payload = Vec::new();
         } else {
             *payload = first;
@@ -98,9 +93,6 @@ impl Member {
 
         self.read_worker();
         self.write_worker();
-    }
-
-    fn set_default_session(&mut self) {
     }
 
     pub fn negotiate_session(&self, base_sdp: Option<SessionDescription>) {
@@ -165,7 +157,7 @@ impl Member {
 
                 let mut payload = member_session.r_payload.lock().unwrap();
                 debug!("Audio worker...3");
-                if (some_payload.is_some()) {
+                if some_payload.is_some() {
                     (*payload).extend_from_slice(&some_payload.unwrap());
                     //debug!("Audio worker payload... {:?}", (*payload));
                 }
@@ -196,7 +188,7 @@ impl MemberSession {
     fn read_and_decode(&self) -> Option<[u8; 3840]> {
         let mut buffer: [u8; 3840] = [0; 3840];
 
-        let mut rtp_pkt = self.read_audio();
+        let rtp_pkt = self.read_audio();
         let mut tmp_buffer: Vec<i16> = vec![0; 1920];
 
         debug!("Read from ssrc {} csrc {:?} seq {} ts {}...", rtp_pkt.header.ssrc, rtp_pkt.header.csrc, rtp_pkt.header.seq_number, rtp_pkt.header.timestamp);
@@ -215,7 +207,7 @@ impl MemberSession {
 
         convert_i16_to_u8(&mut tmp_buffer, &mut buffer);
 
-        let mut packet_lock = packet.lock().unwrap();
+        let mut packet_lock = PACKET.lock().unwrap();
         if !packet_lock.is_some() {
             *packet_lock = Some(rtp_pkt);
         }
@@ -225,7 +217,7 @@ impl MemberSession {
 
     fn encode_and_write(&self, raw_payload: [u8; 3840]) {
         let mut rtp_pkt;
-        let packet_lock = packet.lock().unwrap();
+        let packet_lock = PACKET.lock().unwrap();
         if packet_lock.is_some() {
             rtp_pkt = RtpPkt {
                 header: RtpHeader {
@@ -235,16 +227,16 @@ impl MemberSession {
                     cc: 0,
                     marker: 0,
                     payload_type: packet_lock.as_ref().unwrap().header.payload_type,
-                    seq_number: packet_lock.as_ref().unwrap().header.seq_number + *(counter.lock().unwrap()),
-                    timestamp: packet_lock.as_ref().unwrap().header.timestamp + *(ts.lock().unwrap()),
+                    seq_number: packet_lock.as_ref().unwrap().header.seq_number + *(COUNTER.lock().unwrap()),
+                    timestamp: packet_lock.as_ref().unwrap().header.timestamp + *(TS.lock().unwrap()),
                     ssrc: packet_lock.as_ref().unwrap().header.ssrc,
                     csrc: packet_lock.as_ref().unwrap().header.csrc.clone(),
                 },
                 payload: vec![],
             };
             debug!("Writing ssrc {} csrc {:?} seq {} ts {}...", rtp_pkt.header.ssrc, rtp_pkt.header.csrc, rtp_pkt.header.seq_number, rtp_pkt.header.timestamp);
-            *(ts.lock().unwrap()) += 960;
-            *(counter.lock().unwrap()) += 1;
+            *(TS.lock().unwrap()) += 960;
+            *(COUNTER.lock().unwrap()) += 1;
          } else {
             return;
         }
@@ -277,8 +269,7 @@ impl MemberSession {
         let sessions_map = session_lock.media_sessions.lock().unwrap();
         // TODO(tlam): Need to fix when we allocate more than 1 candidate, since this loop won't
         // work
-        for (k, rtp_session) in sessions_map.iter() {
-            //debug!("Writing packet to port {} {}", self.sdp.media[0].clone().media.port, k);
+        for (_, rtp_session) in sessions_map.iter() {
             rtp_session.write(rtp_pkt);
         }
     }
@@ -304,8 +295,7 @@ impl MemberSession {
 
         let sessions_map = session_lock.media_sessions.lock().unwrap();
 
-        for (k, rtp_session) in sessions_map.iter() {
-            //debug!("Reading packet from port {} {}", self.sdp.media[0].clone().media.port, k);
+        for (_, rtp_session) in sessions_map.iter() {
             rtp_session.read(&mut rtp_pkt);
         }
 

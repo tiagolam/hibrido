@@ -1,15 +1,11 @@
 extern crate nickel;
 
-use std::thread;
-use std::sync::Arc;
 use std::collections::BTreeMap;
-use std::sync::RwLock;
-use rustc_serialize;
 
 use self::nickel::{Nickel, HttpRouter, Request, Response, MiddlewareResult, JsonBody};
 use self::nickel::status::StatusCode;
 use rustc_serialize::json::{Json, ToJson};
-use super::handlers;
+use super::Handlers;
 
 use convo::convo::{Conference};
 use convo::member::{Member};
@@ -99,7 +95,7 @@ fn get_conference<'mw>(req: &mut Request, mut res: Response<'mw>) -> MiddlewareR
 
 fn post_member<'mw>(req: &mut Request, mut res: Response<'mw>) -> MiddlewareResult<'mw> {
 
-    let mut convo;
+    let convo;
     {
         let convoid = req.param("convoid").unwrap();
 
@@ -201,7 +197,7 @@ fn enable_cors<'mw>(_req: &mut Request, mut res: Response<'mw>) -> MiddlewareRes
     res.send("")
 }
 
-impl handlers for HttpServer {
+impl Handlers for HttpServer {
 
     fn start_server() {
         let mut server = Nickel::new();

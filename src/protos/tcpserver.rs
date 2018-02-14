@@ -1,33 +1,24 @@
-use std::net::{TcpListener, TcpStream, UdpSocket, SocketAddr};
-use std::str::FromStr;
+use std::net::{TcpListener, TcpStream};
 use std::io::{Read, Write};
 use std::thread;
 use std::str;
 use std::str::from_utf8;
-use std::sync::{Arc, RwLock};
 
 use sdp::{SessionDescription, ParseResult};
 use convo::member::{Member};
 use convo::convo::{Conference};
-use convo;
-use rir::rtp::{RtpSession, RtpPkt, RtpHeader};
-use rir::rtp;
-use super::handlers;
+use super::Handlers;
 
-pub struct tcp {
+pub struct Tcp {
 }
 
-impl tcp {
-
-    /*pub fn new() -> tcp {
-        tcp {}
-    }*/
+impl Tcp {
 
     // We will receive the SDP through TCP
     fn handle_client(mut stream: TcpStream) {
         let mut buf = [0; 1500];
         let _ = stream.read(&mut buf);
-        let mut request = from_utf8(&buf).unwrap();
+        let request = from_utf8(&buf).unwrap();
 
         debug!("Request on the wire: {:?}", request);
 
@@ -91,7 +82,7 @@ impl tcp {
         let member = Member::new(parse_result.desc); 
 
         {
-            let mut sdp_answer;
+            let sdp_answer;
             debug!("convo set up...");
             //let mut convo_lock = convo.write().unwrap();
             debug!("convo set up2...");
@@ -108,7 +99,7 @@ impl tcp {
     }
 }
 
-impl handlers for tcp {
+impl Handlers for Tcp {
 
     fn start_server() {
 
@@ -119,10 +110,10 @@ impl handlers for tcp {
                 Ok(stream) => {
                     thread::spawn(move || {
                         // connection succeeded
-                        tcp::handle_client(stream)
+                        Tcp::handle_client(stream)
                     });
                 }
-                Err(e) => { /* connection failed */ }
+                Err(_) => { /* connection failed */ }
             }
         }
 

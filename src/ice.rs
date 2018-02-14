@@ -7,20 +7,13 @@ extern crate time;
 
 use std::str::FromStr;
 use std::net::IpAddr;
-use std::net::{UdpSocket, SocketAddr, SocketAddrV4};
-use std::thread;
+use std::net::SocketAddr;
 use std::collections::HashMap;
 use self::uuid::Uuid;
 use std::sync::{mpsc};
 
 use self::timer::Timer;
 use self::time::Duration;
-use self::fibers::{Executor, InPlaceExecutor, Spawn};
-use self::rustun::server::UdpServer;
-use self::rustun::rfc5389::handlers::BindingHandler;
-
-use rir::rtp::{RtpSession, RtpPkt, RtpHeader};
-use convo::session_negotiation::Session;
 
 pub const RTP_COMPONENT_ID: u16 = 1;
 pub const RTCP_COMPONENT_ID: u16 = 2;
@@ -134,19 +127,6 @@ pub struct Agent {
 
 static mut START_PORT: u16 = 6000;
 
-/// Setup STUN server on the port
-fn setup_stun_server(conn: UdpSocket) {
-    let mut executor = InPlaceExecutor::new().unwrap();
-
-    let spawner = executor.handle();
-    let monitor = executor.spawn_monitor(UdpServer::new(conn)
-                          .start(spawner.boxed(), BindingHandler::new("T0teqPLNQQOf+5W+ls+P2p16".to_string())));
-
-    thread::spawn(move || {
-        let result = executor.run_fiber(monitor).unwrap();
-    });
-}
-
 /// Get IPv4 addresses only.
 fn get_ipv4_address() -> Option<SocketAddr> {
 
@@ -190,7 +170,7 @@ impl Agent {
     }
 
     /// Start agent and initiate the regular functions
-    pub fn start(&mut self, mut handler: Box<Handler + Send>) {
+    pub fn start(&mut self, handler: Box<Handler + Send>) {
         let (tx, rx) = mpsc::channel();
         let timer = Timer::new();
 
@@ -247,7 +227,7 @@ impl Agent {
     }
 
     pub fn add_offer_candidate(&mut self, stream_id: &str, component_id: &u16, candidate: Candidate) {
-        let mut stream = match self.streams.get_mut(stream_id) {
+        let stream = match self.streams.get_mut(stream_id) {
             Some(stream) => { stream },
             None => { return },
         };
@@ -267,7 +247,7 @@ impl Agent {
 
     /// Gather candidates for a particular stream
     pub fn gather_candidates(&mut self, stream_id: &str, component_id: &u16) {
-        let mut stream = self.streams.get_mut(stream_id).unwrap();
+        let stream = self.streams.get_mut(stream_id).unwrap();
 
         let ipv4_addr = get_ipv4_address();
         if !ipv4_addr.is_some() {
@@ -308,7 +288,7 @@ impl Agent {
     }
 
     pub fn add_pair_candidate(&mut self, stream_id: &str, component_id: &u16, local_port: u16, remote_port: u16) {
-        let mut stream = match self.streams.get_mut(stream_id) {
+        let stream = match self.streams.get_mut(stream_id) {
             Some(stream) => { stream },
             None => { return },
         };
@@ -341,7 +321,7 @@ impl Agent {
                 }
             }
 
-            if (peer_candidate.is_none() || local_candidate.is_none()) {
+            if peer_candidate.is_none() || local_candidate.is_none() {
                 debug!("No pair inserted for local port {} and remote_port {}!", local_port, remote_port);
                 return;
             }
@@ -372,7 +352,7 @@ impl Agent {
         // - They have same component;
         // - They utilize same transport protocol;
         // - Same IP family (IPv4 and IPv6).
-        let mut stream = match self.streams.get_mut(stream_id) {
+        let stream = match self.streams.get_mut(stream_id) {
             Some(stream) => { stream },
             None => { return },
         };
@@ -395,7 +375,7 @@ impl Agent {
         if trigger_state_change(stream, component_id) {
             // If there was a state change, trigger callback
             match self.handler {
-                Some(ref mut h) => {
+                Some(ref mut _h) => {
                     //h.handle_callback(stream_id);
                 },
                 None => {
@@ -412,11 +392,6 @@ impl Agent {
 
         candidate.priority = priority;
     }
-
-    fn set_default_candidate(candidates: Vec<Candidate>) {
-        // TODO(tlam): The default candidate should be first on que queue,
-        //              however there's no process in place right now.
-    }
 }
 
 fn is_stream_complete(stream: &Stream, components: &[u16]) -> bool {
@@ -430,7 +405,7 @@ fn is_stream_complete(stream: &Stream, components: &[u16]) -> bool {
     return true;
 }
 
-fn trigger_state_change(stream: &mut Stream, component_id: &u16) -> bool {
+fn trigger_state_change(stream: &mut Stream, _component_id: &u16) -> bool {
     // Check if valid list has pairs for all components
     // TODO(tlam): What if there is more than one candidate per component?
     // (which can happen in dual IPv4 and IPv6 stacks)
@@ -445,7 +420,7 @@ fn trigger_state_change(stream: &mut Stream, component_id: &u16) -> bool {
 
 fn is_ipv4(conn: &IpAddr) -> bool {
     match *conn {
-        IpAddr::V4(ref x) => {
+        IpAddr::V4(_) => {
             debug!("Ipv4 address found");
 
             return true

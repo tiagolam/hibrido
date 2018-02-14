@@ -17,7 +17,7 @@ mod convo;
 
 use sdp::{SessionDescription, Origin};
 use std::net::{IpAddr, Ipv6Addr};
-use protos::handlers;
+use protos::Handlers;
 
 fn main() {
 
@@ -35,9 +35,6 @@ fn main() {
         addr_type: sdp::AddrType::IP4,
         ip_address: IpAddr::V6(Ipv6Addr::new(0,0,0,0,0,0xffff,5,2))
     });
-    let s1_exp = format!("{:?}", s1);
-
-    let s2_res = s1.from_sdp(&s1_exp);
 
     let s3_res = s1.from_sdp("
         v=0

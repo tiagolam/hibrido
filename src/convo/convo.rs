@@ -1,21 +1,12 @@
-use lazy_static;
 use std::collections::HashMap;
-use std::boxed::Box;
-use std::str::FromStr;
 use std::sync::{Arc, Mutex};
 use std::{thread, time};
 use convo::member::Member;
 use sdp::{SessionDescription};
-use std::net::{UdpSocket, SocketAddr};
-use rir::rtp::{RtpSession, RtpPkt, RtpHeader};
-use std::fs::File;
-use std::io::Write;
-use std::io::Read;
-use sdp;
 
 lazy_static! {
-    static ref convos_by_name: Mutex<HashMap<String, Arc<Conference>>> = {
-        let mut m = HashMap::new();
+    static ref CONVOS_BY_NAME: Mutex<HashMap<String, Arc<Conference>>> = {
+        let m = HashMap::new();
         Mutex::new(m)
     };
 }
@@ -31,8 +22,8 @@ pub struct Conference {
 impl Conference {
 
     pub fn new(id: &str) -> Arc<Conference> {
-        if convos_by_name.lock().unwrap().contains_key(id) {
-            return convos_by_name.lock().unwrap().get(id).unwrap().clone();
+        if CONVOS_BY_NAME.lock().unwrap().contains_key(id) {
+            return CONVOS_BY_NAME.lock().unwrap().get(id).unwrap().clone();
         }
 
         debug!("Creating a new convo [{}]", id);
@@ -43,13 +34,13 @@ impl Conference {
             sdp: Mutex::new(None),
         };
 
-        convos_by_name.lock().unwrap().insert(id.to_string(), Arc::new(convo));
-        return convos_by_name.lock().unwrap().get(id).unwrap().clone();
+        CONVOS_BY_NAME.lock().unwrap().insert(id.to_string(), Arc::new(convo));
+        return CONVOS_BY_NAME.lock().unwrap().get(id).unwrap().clone();
     }
 
     pub fn get(id: &str) -> Option<Arc<Conference>> {
-        if convos_by_name.lock().unwrap().contains_key(id) {
-            return Some(convos_by_name.lock().unwrap().get(id).unwrap().clone());
+        if CONVOS_BY_NAME.lock().unwrap().contains_key(id) {
+            return Some(CONVOS_BY_NAME.lock().unwrap().get(id).unwrap().clone());
         } else {
             return None;
         }
@@ -60,7 +51,7 @@ impl Conference {
 
         member.init_session();
 
-        let mut sdp_answer_to_ret;
+        let sdp_answer_to_ret;
         let var = match *mutex {
             // If there's still no SDP bound to this convo, this is
             // the one
@@ -107,7 +98,6 @@ impl Conference {
     fn process_engine(&self) {
         debug!("Processing engine...");
         let members = self.members.clone();
-        let mut buffer: [u8; 3840] = [0; 3840];
         thread::spawn(move || {
             loop {
                 thread::sleep(time::Duration::from_millis(1));
@@ -115,11 +105,10 @@ impl Conference {
 
                 /* Read from members */
                 for (_, member) in members.iter() {
-                    //debug!("Reading from member buffer...");
                     let mut tmp_payload: [u8; 3840] = [0; 3840];
                     let mut write = false;
                     for (_, member_r) in members.iter() {
-                        if (member.id != member_r.id) {
+                        if member.id != member_r.id {
                             debug!("Reading from member {}...", member_r.id);
 
                             let payload = member.get_read_payload();

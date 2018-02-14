@@ -247,7 +247,7 @@ impl ToString for CandidateValue {
 }
 
 impl PartialEq for CandidateValue {
-    fn eq(&self, other: &CandidateValue) -> bool {
+    fn eq(&self, _other: &CandidateValue) -> bool {
         true
         //self.ice_candidate == other.ice_candidate
     }
@@ -296,7 +296,7 @@ impl ToString for Attr {
 
     fn to_string(&self) -> String {
 
-        let mut name;
+        let name;
         let mut value: Option<String> = None;
         match *self {
             Attr::RecvOnly => {
@@ -659,7 +659,6 @@ impl SessionDescription {
     pub fn from_sdp(&self, sdp: &str) -> ParseResult {
         let mut res = ParseResult::new();
         let sdm: Option<MediaDescription> = None;
-        let mut prev_media: Option<MediaDescription> = None;
         let mut first_media = false;
 
         for mut line in sdp.lines() {
@@ -701,7 +700,6 @@ impl SessionDescription {
                             SdpLine::Timing(_) => { res.ignored_lines.push(parsed.clone()); },
                             SdpLine::Attr(_) => { res.ignored_lines.push(parsed.clone()); },
                             SdpLine::Media(_) => {
-                                prev_media = None;
                                 res.ignored_lines.push(parsed.clone());
                             },
                         }
@@ -881,8 +879,6 @@ fn parse_connection(text: &str) -> Option<Connection> {
 
     let ip_addr = FromStr::from_str(conn_addr[0]);
 
-    //let ip_addr::IpAddr = ip_addr.unwrap();
-
     let mut is_mulcast_or_ipv6:bool = false;
 
     match ip_addr {
@@ -991,7 +987,7 @@ fn negotiate_media_stream(orig_media: MediaDescription, offer_media: &mut MediaD
         return false
     }
 
-    let mut found_match = true;
+    let found_match = true;
     let offer_fmt =  offer_media.media.fmt.clone();
     let result = offer_fmt.into_iter().filter(|x| orig_media.media.fmt.contains(x)).collect::<Vec<_>>();
     //offer_media.media.fmt.retain(|x| !orig_media.media.fmt.contains(x));
@@ -1021,7 +1017,7 @@ fn negotiate_media_stream(orig_media: MediaDescription, offer_media: &mut MediaD
 
                     filtered_attrs.push(orig_attr);
                 },
-                Attr::Candidate(ref x) => {
+                Attr::Candidate(_) => {
                     continue;
                 },
 
@@ -1062,7 +1058,7 @@ fn negotiate_media_stream(orig_media: MediaDescription, offer_media: &mut MediaD
             Attr::PTime(ref x) => {
                 offer_media.attrs.push(Attr::PTime(x.clone()))
             },
-            Attr::IceUfrag(ref x) => {
+            Attr::IceUfrag(_) => {
                 // Generate ufrag and pass
                 offer_media.attrs.push(Attr::IceUfrag(IceUfragValue {
                     value: "Oyef7uvBlwafI3hT".to_string()
@@ -1101,7 +1097,7 @@ fn set_media_stream(offer_media: &mut MediaDescription) {
             Attr::PTime(ref x) => {
                 final_attrs.push(Attr::PTime(x.clone()))
             },
-            Attr::IceUfrag(ref x) => {
+            Attr::IceUfrag(_) => {
                 // Generate ufrag and pass
                 final_attrs.push(Attr::IceUfrag(IceUfragValue {
                     value: "Oyef7uvBlwafI3hT".to_string()
@@ -1158,16 +1154,16 @@ pub fn negotiate_with(sdp_orig: Option<&SessionDescription>, sdp_offer: &Session
         let mut filtered_attrs = vec![];
         for answer_attr in sdp_answer.media[0].attrs.drain(0..) {
             match answer_attr {
-                Attr::Candidate(ref x) => {
+                Attr::Candidate(_) => {
                     continue;
                 },
-                Attr::IceUfrag(ref x) => {
+                Attr::IceUfrag(_) => {
                     // Generate ufrag and pass
                     filtered_attrs.push(Attr::IceUfrag(IceUfragValue {
                         value: "Oyef7uvBlwafI3hT".to_string()
                     }));
                 },
-                Attr::IcePwd(ref x) => {
+                Attr::IcePwd(_) => {
                     filtered_attrs.push(Attr::IcePwd(IcePwdValue {
                         value: "T0teqPLNQQOf+5W+ls+P2p16".to_string()
                     }));
