@@ -12,19 +12,15 @@ use sdp::{SessionDescription};
 use rir::rtp::{RtpPkt, RtpHeader};
 use convo::session_negotiation::{Session};
 
-lazy_static! {
-    // Since it's mutable and shared, use mutext.
-    static ref PACKET: Mutex<Option<RtpPkt>> = Mutex::new(None);
-    static ref COUNTER: Mutex<u16> = Mutex::new(0);
-    static ref TS: Mutex<u32> = Mutex::new(0);
-}
-
 struct MemberSession {
     session: Mutex<Session>,
     encoder: Mutex<opus::Encoder>,
     decoder: Mutex<opus::Decoder>,
     r_payload: Mutex<Vec<u8>>,
     w_payload: Mutex<Vec<u8>>,
+    init_packet: Mutex<Option<RtpPkt>>,
+    counter: Mutex<u16>,
+    ts: Mutex<u32>,
 }
 
 pub struct Member {
@@ -50,6 +46,9 @@ impl Member {
                 encoder: Mutex::new(Encoder::new(48000, Channels::Stereo, Application::Audio).unwrap()),
                 r_payload: Mutex::new(Vec::new()),
                 w_payload: Mutex::new(Vec::new()),
+                init_packet: Mutex::new(None),
+                counter: Mutex::new(0),
+                ts: Mutex::new(0),
             }),
         };
 
@@ -70,6 +69,7 @@ impl Member {
         x.clone_from_slice(&(*payload));
         /*  Start dropping data after 1 sec */
         if first.len() >= 192000 {
+            debug!("Deleting payload...");
             *payload = Vec::new();
         } else {
             *payload = first;
@@ -152,7 +152,6 @@ impl Member {
 
                 debug!("Audio worker...1");
                 let some_payload = member_session.read_and_decode();
-
                 debug!("Audio worker...2");
 
                 let mut payload = member_session.r_payload.lock().unwrap();
@@ -207,7 +206,7 @@ impl MemberSession {
 
         convert_i16_to_u8(&mut tmp_buffer, &mut buffer);
 
-        let mut packet_lock = PACKET.lock().unwrap();
+        let mut packet_lock = self.init_packet.lock().unwrap();
         if !packet_lock.is_some() {
             *packet_lock = Some(rtp_pkt);
         }
@@ -217,7 +216,7 @@ impl MemberSession {
 
     fn encode_and_write(&self, raw_payload: [u8; 3840]) {
         let mut rtp_pkt;
-        let packet_lock = PACKET.lock().unwrap();
+        let packet_lock = self.init_packet.lock().unwrap();
         if packet_lock.is_some() {
             rtp_pkt = RtpPkt {
                 header: RtpHeader {
@@ -227,16 +226,16 @@ impl MemberSession {
                     cc: 0,
                     marker: 0,
                     payload_type: packet_lock.as_ref().unwrap().header.payload_type,
-                    seq_number: packet_lock.as_ref().unwrap().header.seq_number + *(COUNTER.lock().unwrap()),
-                    timestamp: packet_lock.as_ref().unwrap().header.timestamp + *(TS.lock().unwrap()),
+                    seq_number: packet_lock.as_ref().unwrap().header.seq_number + *(self.counter.lock().unwrap()),
+                    timestamp: packet_lock.as_ref().unwrap().header.timestamp + *(self.ts.lock().unwrap()),
                     ssrc: packet_lock.as_ref().unwrap().header.ssrc,
                     csrc: packet_lock.as_ref().unwrap().header.csrc.clone(),
                 },
                 payload: vec![],
             };
             debug!("Writing ssrc {} csrc {:?} seq {} ts {}...", rtp_pkt.header.ssrc, rtp_pkt.header.csrc, rtp_pkt.header.seq_number, rtp_pkt.header.timestamp);
-            *(TS.lock().unwrap()) += 960;
-            *(COUNTER.lock().unwrap()) += 1;
+            *(self.ts.lock().unwrap()) += 960;
+            *(self.counter.lock().unwrap()) += 1;
          } else {
             return;
         }
