@@ -13,7 +13,7 @@ use rir::rtp::{RtpPkt, RtpHeader};
 use convo::session_negotiation::{Session};
 
 struct MemberSession {
-    session: Mutex<Session>,
+    session: Session,
     encoder: Mutex<opus::Encoder>,
     decoder: Mutex<opus::Decoder>,
     r_payload: Mutex<Vec<u8>>,
@@ -41,7 +41,7 @@ impl Member {
             id: member_id.to_string(),
             sdp: sdp,
             member_session: Arc::new(MemberSession {
-                session: Mutex::new(session),
+                session: session,
                 decoder: Mutex::new(Decoder::new(48000, Channels::Stereo).unwrap()),
                 encoder: Mutex::new(Encoder::new(48000, Channels::Stereo, Application::Audio).unwrap()),
                 r_payload: Mutex::new(Vec::new()),
@@ -89,25 +89,24 @@ impl Member {
         //self.session.init(Box::new(self.set_default_session));
 
         // TODO(tlam): Remove logic from init function
-        self.member_session.session.lock().unwrap().process_offer();
+        self.member_session.session.process_offer();
 
         self.read_worker();
         self.write_worker();
     }
 
     pub fn negotiate_session(&self, base_sdp: Option<SessionDescription>) {
-        let mut session_lock = self.member_session.session.lock().unwrap();
         // Pass base SDP and negotiate with session's offer
-        let sdp_answer = session_lock.negotiate_with_base_sdp(base_sdp);
+        let sdp_answer = self.member_session.session.negotiate_with_base_sdp(base_sdp);
 
         // Now that we have the answer we can process it
-        session_lock.process_answer();
+        self.member_session.session.process_answer();
 
         sdp_answer
     }
 
     pub fn get_session_answer(&self) -> SessionDescription {
-        self.member_session.session.lock().unwrap().answer_sdp.clone().unwrap()
+        self.member_session.session.answer_sdp.read().unwrap().clone().unwrap()
     }
 
     fn write_worker(&self) {
@@ -263,9 +262,7 @@ impl MemberSession {
     }
 
     fn write_audio(&self, rtp_pkt: &RtpPkt) {
-        let session_lock = self.session.lock().unwrap();
-
-        let sessions_map = session_lock.media_sessions.lock().unwrap();
+        let sessions_map = self.session.media_sessions.read().unwrap();
         // TODO(tlam): Need to fix when we allocate more than 1 candidate, since this loop won't
         // work
         for (_, rtp_session) in sessions_map.iter() {
@@ -290,9 +287,7 @@ impl MemberSession {
             payload: vec![],
         };
 
-        let session_lock = self.session.lock().unwrap();
-
-        let sessions_map = session_lock.media_sessions.lock().unwrap();
+        let sessions_map = self.session.media_sessions.read().unwrap();
 
         for (_, rtp_session) in sessions_map.iter() {
             rtp_session.read(&mut rtp_pkt);
