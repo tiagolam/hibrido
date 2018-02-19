@@ -2,8 +2,6 @@
 extern crate log;
 extern crate log4rs;
 extern crate rir;
-#[macro_use(lazy_static, __lazy_static_create)]
-extern crate lazy_static;
 extern crate opus;
 #[macro_use]
 extern crate nickel;
@@ -18,6 +16,7 @@ mod convo;
 use sdp::{SessionDescription, Origin};
 use std::net::{IpAddr, Ipv6Addr};
 use protos::Handlers;
+use convo::convo::{Conferences};
 
 fn main() {
 
@@ -53,6 +52,6 @@ fn main() {
     //let tcp_server = protos::tcpserver::tcp::new();
     //tcp_server.start_server();
     //protos::tcpserver::tcp::start_server();
-    protos::httpserver::HttpServer::start_server();
+    protos::httpserver::HttpServer::start_server(Conferences::init());
 }
 

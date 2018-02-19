@@ -4,11 +4,43 @@ use std::{thread, time};
 use convo::member::Member;
 use sdp::{SessionDescription};
 
-lazy_static! {
-    static ref CONVOS_BY_NAME: Mutex<HashMap<String, Arc<Conference>>> = {
+pub struct Conferences {
+    pub by_name: Mutex<HashMap<String, Arc<Conference>>>,
+}
+
+impl Conferences {
+    pub fn init() -> Conferences {
         let m = HashMap::new();
-        Mutex::new(m)
-    };
+
+        Conferences {
+            by_name: Mutex::new(m),
+        }
+    }
+
+    pub fn new_convo(&self, id: &str) -> Arc<Conference> {
+        if self.by_name.lock().unwrap().contains_key(id) {
+            return self.by_name.lock().unwrap().get(id).unwrap().clone();
+        }
+
+        debug!("Creating a new convo [{}]", id);
+
+        let convo = Conference {
+            id: id.to_string(),
+            members: Arc::new(Mutex::new(HashMap::new())),
+            sdp: Mutex::new(None),
+        };
+
+        self.by_name.lock().unwrap().insert(id.to_string(), Arc::new(convo));
+        return self.by_name.lock().unwrap().get(id).unwrap().clone();
+    }
+
+    pub fn get_convo(&self, id: &str) -> Option<Arc<Conference>> {
+        if self.by_name.lock().unwrap().contains_key(id) {
+            return Some(self.by_name.lock().unwrap().get(id).unwrap().clone());
+        } else {
+            return None;
+        }
+    }
 }
 
 pub struct Conference {
@@ -20,31 +52,6 @@ pub struct Conference {
 }
 
 impl Conference {
-
-    pub fn new(id: &str) -> Arc<Conference> {
-        if CONVOS_BY_NAME.lock().unwrap().contains_key(id) {
-            return CONVOS_BY_NAME.lock().unwrap().get(id).unwrap().clone();
-        }
-
-        debug!("Creating a new convo [{}]", id);
-
-        let convo = Conference {
-            id: id.to_string(),
-            members: Arc::new(Mutex::new(HashMap::new())),
-            sdp: Mutex::new(None),
-        };
-
-        CONVOS_BY_NAME.lock().unwrap().insert(id.to_string(), Arc::new(convo));
-        return CONVOS_BY_NAME.lock().unwrap().get(id).unwrap().clone();
-    }
-
-    pub fn get(id: &str) -> Option<Arc<Conference>> {
-        if CONVOS_BY_NAME.lock().unwrap().contains_key(id) {
-            return Some(CONVOS_BY_NAME.lock().unwrap().get(id).unwrap().clone());
-        } else {
-            return None;
-        }
-    }
 
     pub fn add_member(&self, member: Member) -> Option<SessionDescription> {
         let mut mutex = self.sdp.lock().unwrap();

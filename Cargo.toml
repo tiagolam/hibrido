@@ -10,7 +10,6 @@ path = "src/main.rs"
 [dependencies]
 log = "0.3.6"
 byteorder = "0.5.3"
-lazy_static = "=0.2.1"
 nickel = "0.10.0"
 rir = { path = "../rir" }
 opus = "0.2.0"

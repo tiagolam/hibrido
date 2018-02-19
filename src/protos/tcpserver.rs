@@ -3,19 +3,20 @@ use std::io::{Read, Write};
 use std::thread;
 use std::str;
 use std::str::from_utf8;
+use std::sync::Arc;
 
 use sdp::{SessionDescription, ParseResult};
 use convo::member::{Member};
-use convo::convo::{Conference};
+use convo::convo::{Conferences};
 use super::Handlers;
 
 pub struct Tcp {
+    convos: Conferences,
 }
 
 impl Tcp {
-
     // We will receive the SDP through TCP
-    fn handle_client(mut stream: TcpStream) {
+    fn handle_client(&self, mut stream: TcpStream) {
         let mut buf = [0; 1500];
         let _ = stream.read(&mut buf);
         let request = from_utf8(&buf).unwrap();
@@ -69,7 +70,7 @@ impl Tcp {
         //    to the existing conference.
 
         // Create new convo or return an alrady existing one
-        let convo = Conference::new(convo_id);
+        let convo = self.convos.new_convo(convo_id);
         
         // Abstract the SDP around a member
         let member = Member::new(parse_result.desc); 
@@ -99,16 +100,20 @@ impl Tcp {
 
 impl Handlers for Tcp {
 
-    fn start_server() {
-
+    fn start_server(convos: Conferences) {
         let listener = TcpListener::bind("127.0.0.1:30000").unwrap();
         // accept connections and process them, spawning a new thread for each one
+        let handler = Arc::new(Tcp {
+            convos: convos,
+        });
+
         for stream in listener.incoming() {
             match stream {
                 Ok(stream) => {
+                    let handler = handler.clone();
                     thread::spawn(move || {
                         // connection succeeded
-                        Tcp::handle_client(stream)
+                        handler.handle_client(stream)
                     });
                 }
                 Err(_) => { /* connection failed */ }

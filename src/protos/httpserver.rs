@@ -7,11 +7,9 @@ use self::nickel::status::StatusCode;
 use rustc_serialize::json::{Json, ToJson};
 use super::Handlers;
 
-use convo::convo::{Conference};
+use convo::convo::{Conferences};
 use convo::member::{Member};
 use sdp::{SessionDescription};
-
-pub struct HttpServer;
 
 #[derive(RustcDecodable, RustcEncodable)]
 pub struct ConferencePost {
@@ -51,13 +49,20 @@ impl ToJson for MemberResponse {
     }
 }
 
-fn post_conference<'mw>(req: &mut Request, mut res: Response<'mw>) -> MiddlewareResult<'mw> {
+pub struct HttpServer {
+    convos: Conferences,
+}
+
+
+fn post_conference<'mw>(req: &mut Request<HttpServer>, mut res: Response<'mw, HttpServer>) -> MiddlewareResult<'mw, HttpServer> {
+    let handler = req.server_data();
+    let convos = &handler.convos;
 
     // Parse JSON
     let convo_post = req.json_as::<ConferencePost>().unwrap();
 
     // Create new convo or return an alrady existing one
-    let convo = Conference::new(&convo_post.convo_id);
+    let convo = convos.new_convo(&convo_post.convo_id);
 
     let response = ConferenceResponse {
         convo_id: convo.id.to_string(),
@@ -69,12 +74,14 @@ fn post_conference<'mw>(req: &mut Request, mut res: Response<'mw>) -> Middleware
     res.send(response.to_json())
 }
 
-fn get_conference<'mw>(req: &mut Request, mut res: Response<'mw>) -> MiddlewareResult<'mw> {
+fn get_conference<'mw>(req: &mut Request<HttpServer>, mut res: Response<'mw, HttpServer>) -> MiddlewareResult<'mw, HttpServer> {
+    let handler = req.server_data();
+    let convos = &handler.convos;
 
     let convoid = req.param("convoid").unwrap();
 
     // Get the convo of id :convoid
-    let convo = Conference::get(convoid);
+    let convo = convos.get_convo(convoid);
 
     match convo {
         Some(convo) => {
@@ -93,14 +100,16 @@ fn get_conference<'mw>(req: &mut Request, mut res: Response<'mw>) -> MiddlewareR
     }
 }
 
-fn post_member<'mw>(req: &mut Request, mut res: Response<'mw>) -> MiddlewareResult<'mw> {
+fn post_member<'mw>(req: &mut Request<HttpServer>, mut res: Response<'mw, HttpServer>) -> MiddlewareResult<'mw, HttpServer> {
+    let handler = req.server_data();
+    let convos = &handler.convos;
 
     let convo;
     {
         let convoid = req.param("convoid").unwrap();
 
         // Try and find convo
-        let convo_result = Conference::get(convoid);
+        let convo_result = convos.get_convo(convoid);
         if !convo_result.is_some() {
             res.set(StatusCode::NotFound);
             return res.render("Conference {} not found", &convoid)
@@ -138,12 +147,14 @@ fn post_member<'mw>(req: &mut Request, mut res: Response<'mw>) -> MiddlewareResu
     res.send(response.to_json())
 }
 
-fn get_conference_member<'mw>(req: &mut Request, mut res: Response<'mw>) -> MiddlewareResult<'mw> {
+fn get_conference_member<'mw>(req: &mut Request<HttpServer>, mut res: Response<'mw, HttpServer>) -> MiddlewareResult<'mw, HttpServer> {
+    let handler = req.server_data();
+    let convos = &handler.convos;
 
     let convoid = req.param("convoid").unwrap();
 
     // Get the convo of id :convoid
-    let convo = Conference::get(convoid);
+    let convo = convos.get_convo(convoid);
     if !convo.is_some() {
         res.set(StatusCode::NotFound);
         return res.render("Conference {} not found", &convoid)
@@ -167,7 +178,7 @@ fn get_conference_member<'mw>(req: &mut Request, mut res: Response<'mw>) -> Midd
     res.send(response.to_json())
 }
 
-fn enable_cors<'mw>(_req: &mut Request, mut res: Response<'mw>) -> MiddlewareResult<'mw> {
+fn enable_cors<'mw>(_req: &mut Request<HttpServer>, mut res: Response<'mw, HttpServer>) -> MiddlewareResult<'mw, HttpServer> {
     res.headers_mut().set_raw("Access-Control-Allow-Headers", vec![b"content-type".to_vec()]);
     res.headers_mut().set_raw("Access-Control-Allow-Methods", vec![b"POST, OPTIONS".to_vec()]);
     res.headers_mut().set_raw("Access-Control-Allow-Origin", vec![b"*".to_vec()]);
@@ -176,8 +187,11 @@ fn enable_cors<'mw>(_req: &mut Request, mut res: Response<'mw>) -> MiddlewareRes
 
 impl Handlers for HttpServer {
 
-    fn start_server() {
-        let mut server = Nickel::new();
+    fn start_server(convos: Conferences) {
+        let handler = HttpServer {
+            convos: convos,
+        };
+        let mut server = Nickel::with_data(handler);
 
         // Convo related operations
         server.post("/convo", post_conference);
