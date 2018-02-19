@@ -71,13 +71,6 @@ impl Tcp {
         // Create new convo or return an alrady existing one
         let convo = Conference::new(convo_id);
         
-/*        let local_addr =  FromStr::from_str("127.0.0.1").unwrap();
-        let bind_socket = SocketAddr::new(local_addr, 0);
-        let conn = UdpSocket::bind(bind_socket);
-
-        let mut rtp_session = convo::convo::new_rtp_session(conn.unwrap(), parse_result.desc.clone());
-*/
-
         // Abstract the SDP around a member
         let member = Member::new(parse_result.desc); 
 

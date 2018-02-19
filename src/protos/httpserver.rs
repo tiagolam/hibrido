@@ -158,7 +158,6 @@ fn get_conference_member<'mw>(req: &mut Request, mut res: Response<'mw>) -> Midd
     }
 
     let member = member.unwrap();
-    //let member_lock = member.lock().unwrap();
     // Compose response
     let response = MemberResponse {
         member_id: member.id.to_string(),
@@ -167,28 +166,6 @@ fn get_conference_member<'mw>(req: &mut Request, mut res: Response<'mw>) -> Midd
  
     res.send(response.to_json())
 }
-
-/*fn get_member<'mw>(req: &mut Request, mut res: Response<'mw>) -> MiddlewareResult<'mw> {
-
-    let memberid = req.param("memberid").unwrap();
-
-    // Get the member of id :memberid
-    let member = Member::get(memberid);
-    if !member.is_some() {
-        res.set(StatusCode::NotFound);
-        return res.render("Member {} not found", &memberid)
-    }
-
-    let member = member.unwrap();
-    //let member_lock = member.lock().unwrap();
-    // Compose response
-    let response = MemberResponse {
-        member_id: member.id.to_string(),
-        sdp: member.sdp.to_string(),
-    };
- 
-    res.send(response.to_json())
-}*/
 
 fn enable_cors<'mw>(_req: &mut Request, mut res: Response<'mw>) -> MiddlewareResult<'mw> {
     res.headers_mut().set_raw("Access-Control-Allow-Headers", vec![b"content-type".to_vec()]);
@@ -207,12 +184,6 @@ impl Handlers for HttpServer {
         server.get("/convo/:convoid", get_conference);
         server.post("/convo/:convoid/member", post_member);
         server.get("/convo/:convoid/member/:memberid", get_conference_member);
-        // Member related operations
-        //server.get("/member/:memberid", get_member);
-
-        /*server.get("/user/:userid", middleware! { |request|
-            format!("This is user: {:?}", request.param("userid"))
-        });*/
 
         server.utilize(enable_cors);
 
@@ -225,4 +196,3 @@ impl Handlers for HttpServer {
         }
     }
 }
-
